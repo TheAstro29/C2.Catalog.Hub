@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#3F654D">
+  <title>Catalog Hub by C2TECH</title>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="assets/c2loop-icon.svg">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="pb-tabbar">
+
+  <div id="ptr">⬇️ ลากลงเพื่อรีเฟรช</div>
+
+  <div id="imageOverlay" onclick="this.style.display='none'">
+    <img id="overlayImg" src="" alt="Preview">
+    <div class="overlay-hint">แตะที่ว่างเพื่อปิด</div>
+  </div>
+
+  <header class="hdr no-print">
+    <div class="hdr-inner">
+      <div class="hdr-top">
+        <div class="hdr-brand">
+          <div class="hdr-badge"><img src="assets/c2loop-mark-white.svg" alt="Catalog Hub"></div>
+          <div>
+            <div class="hdr-title">CATALOG HUB</div>
+            <div class="hdr-sub">แคตตาล็อกสินค้า C2TECH</div>
+          </div>
+        </div>
+        <div class="hdr-icons">
+          <button id="webQrBtn" class="hdr-icon-btn" onclick="showWebQR()" title="QR เว็บ"><i class="fas fa-qrcode"></i></button>
+          <button id="adminBtn" class="hdr-icon-btn admin hidden" onclick="openAdminModal()" title="จัดการระบบ"><i class="fas fa-toolbox"></i></button>
+          <button id="logoutBtn" class="hdr-icon-btn danger hidden" onclick="handleLogout()" title="ออกจากระบบแอดมิน"><i class="fas fa-lock"></i></button>
+          <button id="unlockBtn" class="hdr-icon-btn" onclick="askAdminPassword()" title="ปลดล็อกแอดมิน"><i class="fas fa-unlock"></i></button>
+        </div>
+      </div>
+      <div class="search-box">
+        <i class="fas fa-search"></i>
+        <input type="text" id="searchInput" oninput="filterProductsDebounced()" placeholder="ค้นหาชื่อรุ่น, รหัสสินค้า...">
+      </div>
+    </div>
+    <div id="offlineChip" class="offline-chip hidden"><i class="fas fa-wifi"></i> <span id="offlineChipText">ออฟไลน์ — แสดงแคตตาล็อกที่บันทึกไว้ล่าสุด</span></div>
+    <nav id="catTabs" class="tabs no-scrollbar"></nav>
+  </header>
+
+  <main class="grid" id="catalogList">
+    <div class="loading-state">กำลังเชื่อมต่อข้อมูล...</div>
+  </main>
+
+  <!-- แถบลอยด้านล่าง: รายการสินค้าที่เลือกไว้เพื่อแชร์ให้ลูกค้าทีเดียวหลังนำเสนอจบ -->
+  <div id="selectionBar" class="selection-bar hidden no-print">
+    <div class="selection-left"><span class="selection-count" id="selectionCount">0</span> รายการที่เลือกไว้</div>
+    <div class="selection-actions">
+      <button class="sel-btn-clear" onclick="clearSelection()"><i class="fas fa-times"></i></button>
+      <button class="sel-btn-share" onclick="shareSelectionToLine()"><i class="fab fa-line"></i> แชร์ให้ลูกค้า</button>
+    </div>
+  </div>
+
+  <div id="adminModal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h2 id="modalTitle"><i class="fas fa-toolbox"></i> จัดการระบบ</h2>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+
+      <div class="cat-collapse">
+        <div class="cat-collapse-head" onclick="toggleCatCollapse()">
+          <span><i class="fas fa-folder"></i> จัดการหมวดหมู่</span>
+          <span id="catCollapseArrow">▾</span>
+        </div>
+        <div class="cat-collapse-body hidden" id="catCollapseBody">
+          <input type="text" id="newCatInput" placeholder="ชื่อหมวด...">
+          <button class="icon-sq-btn" onclick="handleAddCat()"><i class="fas fa-plus"></i></button>
+          <button class="icon-sq-btn danger" onclick="handleDelCat()"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>
+
+      <div class="form-stack">
+        <input type="hidden" id="editOldTitle">
+        <div class="form-field">
+          <label class="label-mini">ชื่อรุ่นสินค้า <span class="req">*</span></label>
+          <input type="text" id="inputTitle" placeholder="เช่น Gateway EPG-001B">
+        </div>
+        <div class="form-field">
+          <label class="label-mini">หมวดหมู่ <span class="req">*</span></label>
+          <select id="inputCat"></select>
+        </div>
+        <div class="form-field">
+          <label class="label-mini">ประเภทไฟล์</label>
+          <div class="type-pills" id="typePills">
+            <div class="type-pill active" data-type="pdf" onclick="selectFileType('pdf')"><span class="ic">📄</span>PDF</div>
+            <div class="type-pill" data-type="video" onclick="selectFileType('video')"><span class="ic">🎬</span>วิดีโอ</div>
+            <div class="type-pill" data-type="image" onclick="selectFileType('image')"><span class="ic">🖼️</span>รูปภาพ</div>
+            <div class="type-pill" data-type="other" onclick="selectFileType('other')"><span class="ic">🔗</span>อื่นๆ</div>
+          </div>
+          <div class="auto-detect-chip hidden" id="autoDetectChip"><i class="fas fa-check"></i> <span id="autoDetectText"></span></div>
+        </div>
+        <div class="form-field">
+          <label class="label-mini">ลิงก์ Google Drive <span class="req">*</span></label>
+          <input type="text" id="inputLink" placeholder="https://drive.google.com/..." oninput="updateLinkPreview()">
+          <div class="link-preview hidden" id="linkPreview">
+            <div class="lp-thumb" id="lpThumbWrap"><img id="lpThumbImg" src="" alt=""></div>
+            <div class="link-preview-text"><b>เจอไฟล์แล้ว ✓</b>พรีวิวนี้คือรูปที่จะแสดงในแคตตาล็อก ตรวจสอบให้แน่ใจว่าเป็นไฟล์ที่ถูกต้องก่อนบันทึก</div>
+          </div>
+          <div class="hint">วางลิงก์ที่แชร์แบบ "ทุกคนที่มีลิงก์ดูได้" จาก Google Drive</div>
+        </div>
+        <div class="form-actions">
+          <button id="mainActionBtn" class="btn-primary" onclick="handleProductAction()">บันทึกข้อมูลสินค้า</button>
+          <button onclick="resetToAddMode()" id="resetBtn" class="btn-text hidden">ยกเลิกแก้ไข / เพิ่มใหม่</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="qrOverlay" class="qr-overlay hidden" onclick="closeQrOverlay()">
+    <div class="qr-card" onclick="event.stopPropagation()">
+      <h3 id="qrTitle">ชื่อสินค้า</h3>
+      <p class="qr-hint"><i class="fas fa-mobile-screen-button"></i> สแกน QR Code เพื่อเปิดลิงก์บนมือถือของคุณ</p>
+      <div class="qr-img-wrap"><img id="qrImg" src="" alt="QR Code"></div>
+      <button class="btn-secondary" onclick="closeQrOverlay()">ปิดหน้าต่าง</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

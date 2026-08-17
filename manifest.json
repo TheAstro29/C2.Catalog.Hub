@@ -1,0 +1,15 @@
+{
+  "name": "Catalog Hub by C2TECH",
+  "short_name": "Catalog Hub",
+  "description": "แคตตาล็อกสินค้า C2TECH สำหรับทีมขาย",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f6f5",
+  "theme_color": "#3F654D",
+  "orientation": "any",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/c2loop-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
