@@ -2,25 +2,25 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#3F654D">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f3d2d">
   <title>Catalog Hub by C2TECH</title>
 
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="assets/c2loop-icon.svg">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
-  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Chakra+Petch:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=13" />
 </head>
 <body class="pb-tabbar">
 
   <div id="ptr">⬇️ ลากลงเพื่อรีเฟรช</div>
 
-  <div id="imageOverlay" onclick="this.style.display='none'">
+  <div id="imageOverlay" onclick="this.style.display='none'; if (typeof restartHeroAutoplay === 'function') restartHeroAutoplay();">
     <img id="overlayImg" src="" alt="Preview">
     <div class="overlay-hint">แตะที่ว่างเพื่อปิด</div>
   </div>
@@ -51,6 +51,13 @@
     <nav id="catTabs" class="tabs no-scrollbar"></nav>
   </header>
 
+  <!-- สไลด์หน้าแรก (ไม่ sticky — เลื่อนหายไปพร้อมเนื้อหาตามปกติ) หมุนเองอัตโนมัติ กดแล้วเปิดโบรชัวร์ที่ Admin ผูกไว้ -->
+  <div id="heroSlider" class="hero-slider hidden no-print">
+    <div class="hero-track" id="heroTrack"></div>
+    <div class="hero-progress"><div class="hero-progress-fill" id="heroProgressFill"></div></div>
+    <div class="hero-dots" id="heroDots"></div>
+  </div>
+
   <main class="grid" id="catalogList">
     <div class="loading-state">กำลังเชื่อมต่อข้อมูล...</div>
   </main>
@@ -80,6 +87,22 @@
           <input type="text" id="newCatInput" placeholder="ชื่อหมวด...">
           <button class="icon-sq-btn" onclick="handleAddCat()"><i class="fas fa-plus"></i></button>
           <button class="icon-sq-btn danger" onclick="handleDelCat()"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>
+
+      <!-- จัดการสไลด์หน้าแรก — Admin วางแค่ลิงก์รูป + ลิงก์ไฟล์ที่จะเปิด (Google Drive ทั้งคู่ เหมือนตอนเพิ่มสินค้า) -->
+      <div class="cat-collapse">
+        <div class="cat-collapse-head" onclick="toggleSlideCollapse()">
+          <span><i class="fas fa-images"></i> จัดการสไลด์หน้าแรก</span>
+          <span id="slideCollapseArrow">▾</span>
+        </div>
+        <div class="cat-collapse-body slide-collapse-body hidden" id="slideCollapseBody">
+          <div id="slideAdminList" class="slide-admin-list"></div>
+          <div class="slide-admin-add">
+            <input type="text" id="newSlideImgInput" placeholder="ลิงก์รูปภาพ (Google Drive)">
+            <input type="text" id="newSlideLinkInput" placeholder="ลิงก์ไฟล์ที่จะเปิดเมื่อกด (Google Drive)">
+            <button class="btn-primary" onclick="handleAddSlide()"><i class="fas fa-plus"></i> เพิ่มสไลด์</button>
+          </div>
         </div>
       </div>
 
@@ -120,6 +143,18 @@
     </div>
   </div>
 
+  <div id="brochureOverlay" class="brochure-overlay hidden" onclick="closeBrochureOverlay()">
+    <div class="brochure-card" onclick="event.stopPropagation()">
+      <button class="brochure-close" onclick="closeBrochureOverlay()">&times;</button>
+      <div class="brochure-cover" id="brochureCoverImg"></div>
+      <div class="brochure-info">
+        <div class="brochure-title" id="brochureTitle"></div>
+        <div class="brochure-hint">เปิดไฟล์นี้จากลิงก์ที่ผูกไว้กับสไลด์</div>
+        <a id="brochureOpenBtn" class="brochure-open-btn" target="_blank" rel="noopener noreferrer">เปิดไฟล์</a>
+      </div>
+    </div>
+  </div>
+
   <div id="qrOverlay" class="qr-overlay hidden" onclick="closeQrOverlay()">
     <div class="qr-card" onclick="event.stopPropagation()">
       <h3 id="qrTitle">ชื่อสินค้า</h3>
@@ -129,6 +164,6 @@
     </div>
   </div>
 
-  <script src="script.js"></script>
+  <script src="script.js?v=13"></script>
 </body>
 </html>

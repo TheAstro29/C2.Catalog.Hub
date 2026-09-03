@@ -4,13 +4,17 @@
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzYJ9v6sHQkTYgSxU57OqS5IE3OQlolzndSDhKqazX7qHqaYwkzcWVa8diAoTC1mb8/exec';
 const SHEET_BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRv8oYJkDkFIsXwM5ZTn_xPhH8XAD02VVl_9XVFzu2ySNOqnGVMOOH_WiXk5w0nYMU74jc1pxLQkwCD/pub?output=csv';
 const CAT_CSV_URL = SHEET_BASE_URL + '&gid=1305593331';
+// สไลด์หน้าแรก — CSV ของ Sheet แท็บ "slides" (คอลัมน์ imageUrl, linkUrl)
+const SLIDES_CSV_URL = SHEET_BASE_URL + '&gid=935171774';
 
 const CACHE_KEY_PRODUCTS = 'catalogHub_products_v2';
 const CACHE_KEY_CATEGORIES = 'catalogHub_categories_v2';
+const CACHE_KEY_SLIDES = 'catalogHub_slides_v1';
 const CACHE_KEY_SYNC_TIME = 'catalogHub_lastSync_v2';
 
 let catalogs = [];
 let categories = [];
+let slides = []; // [{ imageUrl, linkUrl }]
 let currentFilter = 'all';
 let currentSearch = '';
 let currentAction = 'add';
@@ -23,8 +27,8 @@ const selectedIdx = new Set(); // ดัชนีสินค้าที่เ�
 function init() {
   loadFromCache();
   fetchData();
+  loadSlides();
   setupPullToRefresh();
-  setupCatTabsClick();
   registerServiceWorker();
 }
 
@@ -33,6 +37,7 @@ function loadFromCache() {
   try {
     const cachedProducts = localStorage.getItem(CACHE_KEY_PRODUCTS);
     const cachedCats = localStorage.getItem(CACHE_KEY_CATEGORIES);
+    const cachedSlides = localStorage.getItem(CACHE_KEY_SLIDES);
     if (cachedProducts) {
       catalogs = JSON.parse(cachedProducts);
       categories = cachedCats ? JSON.parse(cachedCats) : ['ทั่วไป'];
@@ -42,7 +47,11 @@ function loadFromCache() {
       renderCatalogs();
       showOfflineChip(true);
     }
-  } catch (e) { /* แคชเสีย ไม่เป็นไร ปล่อยให้ fetchData โหลดสดแทน */ }
+    if (cachedSlides) {
+      slides = JSON.parse(cachedSlides);
+      renderHeroSlider();
+    }
+  } catch (e) { /* แคชเสีย ไม่เป็นไร ปล่อยให้ fetchData/loadSlides โหลดสดแทน */ }
 }
 
 /** ติด _idx ให้ทุกสินค้าไว้ใช้เป็นตัวอ้างอิงที่ปลอดภัย (กันปัญหาชื่อสินค้ามีเครื่องหมายคำพูดทำให้ onclick พัง) */
@@ -64,6 +73,18 @@ function showOfflineChip(show, text) {
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
+    // เมื่อมี Service Worker เวอร์ชันใหม่เข้าควบคุมหน้าเว็บ (หลัง admin อัปเดตไฟล์แอปแล้วเปลี่ยน CACHE_NAME ใน sw.js)
+    // ให้รีโหลดหน้าอัตโนมัติทันทีครั้งเดียว กันปัญหาผู้ใช้เห็นเวอร์ชันเก่าค้างเพราะต้องกด hard refresh เอง
+    // สำคัญ: ต้องกันด้วย sessionStorage (ไม่ใช่แค่ตัวแปรในหน่วยความจำ) เพราะตัวแปรธรรมดาจะรีเซ็ตทุกครั้งที่หน้ารีโหลด
+    // ถ้า Service Worker บางเบราว์เซอร์ (โดยเฉพาะ Safari/iOS) ยิง controllerchange ซ้ำหลายรอบ จะกลายเป็นวนรีโหลดไม่หยุด
+    // (บั๊กนี้เคยเกิดจริง ทำให้แตะปุ่มอะไรไม่ทันเพราะหน้าจอรีโหลดตัดหน้าตลอด) — sessionStorage อยู่ข้ามการรีโหลดได้ จึงกันซ้ำได้จริง
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      let alreadyReloaded = false;
+      try { alreadyReloaded = sessionStorage.getItem('swReloaded') === '1'; } catch (e) { /* เข้าถึงไม่ได้ก็ข้าม ไม่รีโหลดเพื่อความปลอดภัย */ alreadyReloaded = true; }
+      if (alreadyReloaded) return;
+      try { sessionStorage.setItem('swReloaded', '1'); } catch (e) { /* ไม่เป็นไร */ }
+      window.location.reload();
+    });
   }
 }
 
@@ -216,27 +237,24 @@ function handleLogout(silent) {
 // ============================================================
 // UI Rendering
 // ============================================================
-/** เดิมปุ่มหมวดหมู่ใช้ onclick="filterCategory(${JSON.stringify(cat)})" ซึ่งพัง! เพราะ JSON.stringify
- * ครอบชื่อหมวดหมู่ด้วยเครื่องหมาย " เสมอ แล้วไปชนกับเครื่องหมาย " ที่ครอบ attribute onclick="..." เอง
- * ทำให้ browser ตัด onclick ให้เหลือครึ่งเดียว กดแล้วไม่ทำงานเลยไม่ว่าชื่อหมวดหมู่จะเป็นอะไรก็ตาม (แก้ในรอบนี้)
- * เปลี่ยนมาเก็บชื่อหมวดหมู่ไว้ใน data-cat attribute (escape ให้ปลอดภัยแล้ว) แล้วใช้ event delegation แทน
- * onclick ตรงๆ — วิธีนี้ปลอดภัยไม่ว่าชื่อหมวดหมู่จะมีเครื่องหมายคำพูด, อะพอสโทรฟี หรืออักขระพิเศษอะไรก็ตาม */
 function renderTabs() {
   const tabs = document.getElementById('catTabs');
-  let html = `<button class="tab-pill ${currentFilter === 'all' ? 'active' : ''}" data-cat="all">ทั้งหมด</button>`;
+  let html = `<button class="tab-pill ${currentFilter === 'all' ? 'active' : ''}" onclick="filterCategory('all')">ทั้งหมด</button>`;
   categories.forEach(cat => {
-    html += `<button class="tab-pill ${currentFilter === cat ? 'active' : ''}" data-cat="${escapeAttr(cat)}">${escapeHtml(cat)}</button>`;
+    // บั๊กเดิม: ใช้ JSON.stringify(cat) ฝังตรงๆ ใน onclick="..." ซึ่ง JSON.stringify ใส่ " ครอบให้เสมอ
+    // แต่ attribute onclick ก็ใช้ " ครอบอยู่แล้วเหมือนกัน พอเจอกันเลยตัด attribute ขาดกลางคัน (เหลือแค่ "filterCategory(")
+    // กดแท็บไหนก็ตามที่ไม่ใช่ "ทั้งหมด" เลย error "Unexpected end of input" ทุกครั้ง — แก้โดยใช้ single quote
+    // ครอบ string แทน แล้ว escape ทั้งสองชั้น (เป็น JS string literal ก่อน แล้วค่อย HTML-escape สำหรับใส่ใน attribute)
+    html += `<button class="tab-pill ${currentFilter === cat ? 'active' : ''}" onclick="filterCategory('${jsAttrString(cat)}')">${escapeHtml(cat)}</button>`;
   });
   tabs.innerHTML = html;
 }
 
-// event delegation ผูกครั้งเดียวตอนเริ่มแอป — ไม่ต้องผูกใหม่ทุกครั้งที่ renderTabs() วาดปุ่มใหม่
-function setupCatTabsClick() {
-  document.getElementById('catTabs').addEventListener('click', (e) => {
-    const btn = e.target.closest('.tab-pill');
-    if (!btn) return;
-    filterCategory(btn.dataset.cat);
-  });
+/** เตรียมข้อความให้ฝังใน onclick="...('ตรงนี้')" ได้อย่างปลอดภัย — escape backslash/apostrophe ให้เป็น JS string literal
+ * ที่ถูกต้องก่อน แล้วค่อย HTML-escape อีกชั้นสำหรับใส่ใน attribute (เบราว์เซอร์จะ decode HTML entity ก่อนแล้วค่อยรัน JS) */
+function jsAttrString(str) {
+  const jsEscaped = String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return escapeAttr(jsEscaped);
 }
 
 function updateCatDropdown() {
@@ -332,9 +350,6 @@ function renderCatalogs() {
     const idx = item._idx;
     const isVideo = item.fileType === 'video';
     const fileId = (item.link || '').match(/[-\w]{25,}/);
-    // ใช้ lh3.googleusercontent.com แทน drive.google.com/thumbnail — endpoint หลังนี้ทำงานได้ปกติเวลาเปิดตรงๆ
-    // ในเบราว์เซอร์ แต่เบราว์เซอร์รุ่นใหม่ๆ มักบล็อกไม่ให้เว็บอื่นฝังเป็น <img> (Cross-Origin-Resource-Policy)
-    // ทำให้รูปพังเฉพาะตอนแสดงในเว็บของเรา ทั้งที่เปิดลิงก์ตรงๆ ก็เห็นรูปปกติ — สลับมาใช้โดเมนนี้แก้ปัญหานี้ได้
     const thumbUrl = fileId ? `https://lh3.googleusercontent.com/d/${fileId[0]}=w1000` : localPlaceholder(item.title);
     const isSelected = selectedIdx.has(idx);
 
@@ -359,9 +374,9 @@ function renderCatalogs() {
         <div class="card-body">
           <div class="card-title">${escapeHtml(item.title)}</div>
           <div class="card-actions">
-            <button class="btn-open ${isVideo ? 'btn-play' : ''}" onclick="handleOpenFile(${idx})"><i class="fas ${isVideo ? 'fa-play' : 'fa-file-pdf'}"></i>${isVideo ? 'เล่นวิดีโอ' : 'เปิดไฟล์'}</button>
-            <button class="btn-qr" onclick="showProductQR(${idx})"><i class="fas fa-qrcode"></i>QR</button>
-            <button class="btn-share" onclick="shareSingleToLine(${idx})"><i class="fab fa-line"></i>แชร์</button>
+            <button class="btn-open ${isVideo ? 'btn-play' : ''}" onclick="handleOpenFile(${idx})"><i class="fas ${isVideo ? 'fa-play' : 'fa-file-pdf'}"></i><span class="btn-label">${isVideo ? 'เล่น' : 'เปิด'}</span></button>
+            <button class="btn-qr" onclick="showProductQR(${idx})"><i class="fas fa-qrcode"></i><span class="btn-label">QR</span></button>
+            <button class="btn-share" onclick="shareSingleToLine(${idx})"><i class="fab fa-line"></i><span class="btn-label">แชร์</span></button>
           </div>
         </div>
       </div>`;
@@ -470,8 +485,12 @@ function confirmDeleteProduct(idx) {
     .then((res) => { if (res.isConfirmed) sendToCloud({ action: 'delete', oldTitle: item.title }); });
 }
 
-/** ส่งคำสั่งแก้ไขข้อมูลไปที่ backend — แนบ token เสมอ และอ่านผลลัพธ์จริงกลับมา (ไม่ใช้ no-cors แบบเดิมที่บอกสำเร็จมั่วซั่ว) */
-async function sendToCloud(p) {
+/** ส่งคำสั่งแก้ไขข้อมูลไปที่ backend — แนบ token เสมอ และอ่านผลลัพธ์จริงกลับมา (ไม่ใช้ no-cors แบบเดิมที่บอกสำเร็จมั่วซั่ว)
+ * opts.closeModalOnSuccess (default true) — สินค้า/หมวดหมู่ปิด modal ทั้งอันเมื่อสำเร็จ แต่สไลด์ต้องเปิดโมดัลค้างไว้ให้เพิ่มต่อได้เรื่อยๆ
+ * opts.onSuccess — callback แทนการรีเฟรชสินค้า (เช่น สไลด์ต้องรีเฟรช loadSlides() แทน fetchData()) */
+async function sendToCloud(p, opts) {
+  opts = opts || {};
+  const closeModalOnSuccess = opts.closeModalOnSuccess !== false;
   Swal.fire({ title: 'กำลังบันทึก...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
   try {
     const payload = Object.assign({}, p, { token: adminToken });
@@ -479,9 +498,13 @@ async function sendToCloud(p) {
     const result = await response.json();
 
     if (result.success) {
-      closeModal();
+      if (closeModalOnSuccess) closeModal();
       Swal.fire({ icon: 'success', title: result.message || 'สำเร็จ', showConfirmButton: false, timer: 1200 });
-      setTimeout(() => { fetchData(true); }, 900);
+      if (opts.onSuccess) {
+        setTimeout(opts.onSuccess, 900);
+      } else {
+        setTimeout(() => { fetchData(true); }, 900);
+      }
       return true;
     }
 
@@ -532,6 +555,281 @@ function resetToAddMode() {
   document.getElementById('linkPreview').classList.add('hidden');
   document.getElementById('catCollapseBody').classList.add('hidden');
   document.getElementById('catCollapseArrow').textContent = '▾';
+  const slideBody = document.getElementById('slideCollapseBody');
+  const slideArrow = document.getElementById('slideCollapseArrow');
+  if (slideBody) slideBody.classList.add('hidden');
+  if (slideArrow) slideArrow.textContent = '▾';
+}
+
+// ============================================================
+// สไลด์หน้าแรก (Hero Slider) — หมุนอัตโนมัติ กดรูปแล้วเปิดโบรชัวร์ที่ผูกไว้
+// ทั้งรูปสไลด์และลิงก์ที่จะเปิดเป็นลิงก์ Google Drive ล้วนๆ ที่ admin วางเอง ไม่มีการอัปโหลดไฟล์
+// ============================================================
+let heroAutoplayTimer = null;
+let heroCurrentSlide = 0;
+
+/** ดึงรูปสไลด์จาก Sheet แท็บ "slides" — ถ้ายังไม่ได้ตั้งค่า gid (REPLACE_WITH_SLIDES_GID) หรือดึงไม่สำเร็จ
+ * ให้ซ่อนสไลด์ไว้เงียบๆ ไม่ error ผู้ใช้ทั่วไปจะไม่เห็นสไลด์เลยจนกว่า admin จะตั้งค่า Sheet เสร็จ */
+function loadSlides() {
+  if (!SLIDES_CSV_URL || SLIDES_CSV_URL.indexOf('REPLACE_WITH_SLIDES_GID') !== -1) return;
+  const cacheBuster = `&t=${new Date().getTime()}`;
+  Papa.parse(SLIDES_CSV_URL + cacheBuster, {
+    download: true, header: true, skipEmptyLines: true,
+    complete: (res) => {
+      const fresh = res.data
+        .filter(row => row.imageUrl && row.linkUrl) // ปิดฟีเจอร์ "ใส่แค่รูปอย่างเดียว" ไว้ก่อนชั่วคราว — ต้องมีทั้งรูปและลิงก์ไฟล์
+        .map(row => ({ imageUrl: row.imageUrl.trim(), linkUrl: (row.linkUrl || '').trim() }));
+      slides = fresh;
+      try { localStorage.setItem(CACHE_KEY_SLIDES, JSON.stringify(slides)); } catch (e) { /* เต็ม/ปิดใช้งาน ไม่เป็นไร */ }
+      renderHeroSlider();
+      renderAdminSlideList();
+    },
+    error: () => { /* ยังไม่ตั้งค่า Sheet หรือเน็ตมีปัญหา — ปล่อยให้ใช้ค่าจากแคช (ถ้ามี) เงียบๆ */ },
+  });
+}
+
+/** แปลงลิงก์ Google Drive ให้เป็น URL รูปที่แสดงตรงๆ ได้
+ * หมายเหตุสำคัญ: เดิมใช้ https://drive.google.com/thumbnail?id=...&sz=... ซึ่งจริงๆ แล้วเป็นแค่ตัว "redirect" (HTTP 302)
+ * ไปยัง URL รูปจริงที่โฮสต์อยู่บน lh3.googleusercontent.com อีกที — ปัญหาที่เจอคือสไลด์ 2-3 ที่โหลดพร้อมกันหลายรูป
+ * (ไม่มี loading="lazy" คอยหน่วงให้) บางทีตัว redirect นี้ไม่ถูกตามไปจนสำเร็จ ทำให้รูปไม่ขึ้น (ทั้งที่ถ้าเปิด URL
+ * ปลายทางตรงๆ ก็เห็นรูปปกติดี) จึงเปลี่ยนมาสร้างลิงก์ไปที่ lh3.googleusercontent.com ตรงๆ เลย ตัดขั้นตอน redirect ทิ้งไป
+ * ทำให้โหลดได้เสถียรกว่าเดิมไม่ว่าจะโหลดพร้อมกันกี่รูปก็ตาม */
+function driveImageUrl(link, size) {
+  const fileId = (link || '').match(/[-\w]{25,}/);
+  return fileId ? `https://lh3.googleusercontent.com/d/${fileId[0]}=${size || 'w1000'}` : localPlaceholder('C2TECH');
+}
+
+function renderHeroSlider() {
+  const wrap = document.getElementById('heroSlider');
+  const track = document.getElementById('heroTrack');
+  const dots = document.getElementById('heroDots');
+  if (!wrap || !track || !dots) return;
+
+  stopHeroAutoplay();
+
+  if (!slides.length) {
+    wrap.classList.add('hidden');
+    track.innerHTML = ''; dots.innerHTML = '';
+    return;
+  }
+
+  wrap.classList.remove('hidden');
+  heroCurrentSlide = Math.min(heroCurrentSlide, slides.length - 1);
+
+  // หมายเหตุสำคัญ: ห้ามใส่ loading="lazy" ให้รูปสไลด์พวกนี้ — สไลด์ที่ 2 เป็นต้นไปถูกจัดวางไว้นอกขอบเขตที่มองเห็นจริง
+  // ของเบราว์เซอร์ตั้งแต่แรก (ใช้ CSS transform เลื่อนเข้ามาโชว์ทีหลัง ไม่ใช่การสกอลหน้าจอจริง) ทำให้ตัวตรวจจับ
+  // lazy-load ของเบราว์เซอร์คิดว่ารูปยัง "อยู่ไกลจากจอ" และไม่ยอมโหลดให้เลยตลอดไป
+  //
+  // อีกจุดหนึ่งที่พบว่าเป็นสาเหตุจริงของ "สไลด์ 2-3 ไม่ขึ้น": ถ้าตั้ง src ให้ทุกรูปพร้อมกันทีเดียวตอน render
+  // เบราว์เซอร์จะยิง request ไปโหลดรูปจาก Google หลายรูปพร้อมกันในจังหวะเดียว (burst) ซึ่ง Google มักจะจำกัด/ปฏิเสธ
+  // คำขอรูปพร้อมกันจำนวนมากจาก client เดียวกันแบบนี้ (rate-limit ชั่วคราว) ทำให้รูปแรกขึ้นแต่รูปถัดไปโหลดไม่สำเร็จ
+  // จึงเปลี่ยนมาใส่ URL ไว้ใน data-src ก่อน แล้วค่อยตั้ง src จริงให้ทีละรูปแบบหน่วงเวลาห่างกันเล็กน้อย (ไม่พร้อมกัน)
+  // พร้อมลองใหม่อัตโนมัติถ้าโหลดไม่สำเร็จในครั้งแรก ก่อนจะ fallback ไปใช้รูป placeholder จริงๆ
+  track.innerHTML = slides.map((s, i) => `
+    <div class="hero-slide" onclick="openBrochure(${i})">
+      <img data-src="${escapeAttr(driveImageUrl(s.imageUrl))}" alt="สไลด์ ${i + 1}">
+      <span class="hero-hint"><i class="fas fa-hand-pointer"></i> แตะเพื่อดูรายละเอียด</span>
+    </div>`).join('');
+
+  Array.from(track.querySelectorAll('img[data-src]')).forEach((img, i) => {
+    setTimeout(() => loadHeroImage(img), i * 350);
+  });
+
+  dots.innerHTML = slides.map((_, i) =>
+    `<button class="hero-dot ${i === heroCurrentSlide ? 'active' : ''}" onclick="goToSlide(${i})" aria-label="สไลด์ที่ ${i + 1}"></button>`
+  ).join('');
+
+  const progressWrap = document.getElementById('heroProgressFill');
+  if (progressWrap) progressWrap.parentElement.classList.toggle('hidden', slides.length <= 1);
+
+  applyHeroTransform();
+  setupHeroSwipe();
+  if (slides.length > 1) startHeroAutoplay();
+}
+
+/** โหลดรูปสไลด์ทีละรูป — ถ้าโหลดไม่สำเร็จ (มักเกิดจาก Google จำกัดคำขอรูปพร้อมกันชั่วคราว) จะลองใหม่อัตโนมัติ
+ * อีก 2 ครั้งก่อนค่อย fallback ไปใช้รูป placeholder จริงๆ */
+function loadHeroImage(img, attempt) {
+  attempt = attempt || 1;
+  const url = img.dataset.src;
+  if (!url) return;
+  img.onerror = () => {
+    if (attempt < 3) {
+      setTimeout(() => loadHeroImage(img, attempt + 1), 700 * attempt);
+    } else {
+      img.onerror = null;
+      img.src = localPlaceholder('C2TECH');
+    }
+  };
+  img.src = url;
+}
+
+function applyHeroTransform() {
+  const track = document.getElementById('heroTrack');
+  if (!track) return;
+  track.style.transform = `translateX(-${heroCurrentSlide * 100}%)`;
+  document.querySelectorAll('#heroDots .hero-dot').forEach((d, i) => d.classList.toggle('active', i === heroCurrentSlide));
+}
+
+function goToSlide(i) {
+  heroCurrentSlide = ((i % slides.length) + slides.length) % slides.length;
+  applyHeroTransform();
+  restartHeroAutoplay();
+}
+
+/** แถบนับเวลาสไลด์อัตโนมัติ — วิ่งเต็มความกว้างใน 1 รอบ (4.5 วิ) แล้วรีเซ็ตใหม่ทุกครั้งที่เปลี่ยนสไลด์ */
+function resetHeroProgress() {
+  const fill = document.getElementById('heroProgressFill');
+  if (!fill) return;
+  // ห้ามตั้ง fill.style.width ตรงๆ ด้วย JS — inline style จะชนะ class .animate ใน CSS เสมอ
+  // (specificity ของ inline style สูงกว่า) ทำให้แถบไม่วิ่งเลยแม้ใส่ class animate แล้ว
+  fill.classList.remove('animate');
+  void fill.offsetWidth; // บังคับ reflow ให้ transition รันใหม่ได้ทุกครั้ง (ไม่งั้น browser จะมองว่าไม่มีอะไรเปลี่ยน)
+}
+function playHeroProgress() {
+  resetHeroProgress();
+  const fill = document.getElementById('heroProgressFill');
+  if (!fill) return;
+  requestAnimationFrame(() => { fill.classList.add('animate'); });
+}
+
+function startHeroAutoplay() {
+  stopHeroAutoplay();
+  playHeroProgress();
+  heroAutoplayTimer = setInterval(() => { goToSlide(heroCurrentSlide + 1); }, 4500);
+}
+function stopHeroAutoplay() {
+  if (heroAutoplayTimer) { clearInterval(heroAutoplayTimer); heroAutoplayTimer = null; }
+  resetHeroProgress();
+}
+function restartHeroAutoplay() {
+  if (slides.length > 1) startHeroAutoplay(); else stopHeroAutoplay();
+}
+
+/** รองรับปัดนิ้วซ้าย-ขวาเพื่อเปลี่ยนสไลด์บนมือถือ — bind แค่ครั้งเดียวเพราะ #heroTrack เป็น element เดิม
+ * ที่ถูก re-render แค่ innerHTML ข้างในเท่านั้น (ตัว element เองไม่ได้ถูกสร้างใหม่) */
+let heroSwipeBound = false;
+function setupHeroSwipe() {
+  if (heroSwipeBound) return;
+  const track = document.getElementById('heroTrack');
+  if (!track) return;
+  heroSwipeBound = true;
+
+  let startX = 0, startY = 0, dx = 0, dy = 0, dragging = false;
+
+  track.addEventListener('touchstart', (e) => {
+    if (slides.length < 2) return;
+    dragging = true;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    dx = 0; dy = 0;
+    track.style.transition = 'none';
+    stopHeroAutoplay();
+  }, { passive: true });
+
+  track.addEventListener('touchmove', (e) => {
+    if (!dragging) return;
+    dx = e.touches[0].clientX - startX;
+    dy = e.touches[0].clientY - startY;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      const percent = (dx / track.clientWidth) * 100;
+      track.style.transform = `translateX(calc(-${heroCurrentSlide * 100}% + ${percent}%))`;
+    }
+  }, { passive: true });
+
+  track.addEventListener('touchend', () => {
+    if (!dragging) return;
+    dragging = false;
+    track.style.transition = '';
+    const swipedHorizontally = Math.abs(dx) > Math.abs(dy);
+    const passedThreshold = Math.abs(dx) > track.clientWidth * 0.15;
+    if (swipedHorizontally && passedThreshold) {
+      goToSlide(heroCurrentSlide + (dx < 0 ? 1 : -1));
+    } else {
+      applyHeroTransform();
+      restartHeroAutoplay();
+    }
+  });
+}
+
+/** กดที่สไลด์แล้วเปิดหน้าต่างโบรชัวร์ — แสดงรูปปกของสไลด์นั้น แล้วมีปุ่มลิงก์ไปเปิดไฟล์ที่ผูกไว้ */
+function openBrochure(i) {
+  const slide = slides[i];
+  if (!slide) return;
+  document.getElementById('brochureCoverImg').innerHTML =
+    `<img src="${escapeAttr(driveImageUrl(slide.imageUrl))}" alt="" onerror="this.src='${localPlaceholder('C2TECH')}'">`;
+  document.getElementById('brochureTitle').textContent = 'เปิดโบรชัวร์';
+  document.getElementById('brochureOpenBtn').href = slide.linkUrl;
+  document.getElementById('brochureOverlay').classList.remove('hidden');
+  stopHeroAutoplay();
+}
+
+function closeBrochureOverlay() {
+  document.getElementById('brochureOverlay').classList.add('hidden');
+  restartHeroAutoplay();
+}
+
+// --- Admin: จัดการสไลด์หน้าแรก ---
+function toggleSlideCollapse() {
+  const body = document.getElementById('slideCollapseBody');
+  const arrow = document.getElementById('slideCollapseArrow');
+  const willOpen = body.classList.contains('hidden');
+  body.classList.toggle('hidden');
+  arrow.textContent = willOpen ? '▴' : '▾';
+  if (willOpen) renderAdminSlideList();
+}
+
+function renderAdminSlideList() {
+  const list = document.getElementById('slideAdminList');
+  if (!list) return;
+  if (!slides.length) {
+    list.innerHTML = `<div class="slide-admin-empty">ยังไม่มีสไลด์ — เพิ่มสไลด์แรกด้านล่างนี้ได้เลย</div>`;
+    return;
+  }
+  list.innerHTML = slides.map((s, i) => `
+    <div class="slide-admin-row">
+      <div class="slide-admin-thumb"><img src="${escapeAttr(driveImageUrl(s.imageUrl, 'w200'))}" alt="" onerror="this.src='${localPlaceholder('C2TECH')}'"></div>
+      <div class="slide-admin-text">
+        <div><i class="fas fa-image"></i> ${escapeHtml(truncateMiddle(s.imageUrl))}</div>
+        <div><i class="fas fa-link"></i> ${escapeHtml(truncateMiddle(s.linkUrl))}</div>
+      </div>
+      <div class="slide-admin-actions">
+        <button class="icon-sq-btn danger" onclick="handleDeleteSlide(${i})" title="ลบสไลด์นี้"><i class="fas fa-trash"></i></button>
+      </div>
+    </div>`).join('');
+}
+
+function truncateMiddle(str, max) {
+  max = max || 42;
+  str = str || '';
+  if (str.length <= max) return str;
+  const half = Math.floor((max - 3) / 2);
+  return str.slice(0, half) + '...' + str.slice(str.length - half);
+}
+
+async function handleAddSlide() {
+  const imageUrl = document.getElementById('newSlideImgInput').value.trim();
+  const linkUrl = document.getElementById('newSlideLinkInput').value.trim();
+  if (!imageUrl || !linkUrl) return Swal.fire({ title: 'กรุณาวางลิงก์รูปภาพและลิงก์ไฟล์ให้ครบ', icon: 'warning' });
+
+  const ok = await sendToCloud(
+    { action: 'addSlide', imageUrl, linkUrl },
+    { closeModalOnSuccess: false, onSuccess: loadSlides }
+  );
+  if (ok) {
+    document.getElementById('newSlideImgInput').value = '';
+    document.getElementById('newSlideLinkInput').value = '';
+  }
+}
+
+async function handleDeleteSlide(i) {
+  const slide = slides[i];
+  if (!slide) return;
+  const res = await Swal.fire({ title: 'ลบสไลด์นี้?', icon: 'warning', showCancelButton: true });
+  if (!res.isConfirmed) return;
+  await sendToCloud(
+    { action: 'deleteSlide', imageUrl: slide.imageUrl },
+    { closeModalOnSuccess: false, onSuccess: loadSlides }
+  );
 }
 
 // ============================================================
