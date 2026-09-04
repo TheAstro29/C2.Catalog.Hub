@@ -351,10 +351,10 @@ img { -webkit-user-drag: none; }
   color: var(--muted); font-size: 13px; cursor: grab; touch-action: none; /* กันเบราว์เซอร์แย่งลากไปเลื่อนหน้าจอแทน */
 }
 .drag-handle:active { color: var(--mint); }
-.cat-admin-row.dragging {
+.cat-admin-row.dragging, .contact-admin-row.dragging {
   background: rgba(124,242,180,.08); border-radius: 10px; opacity: .85; cursor: grabbing;
 }
-.cat-admin-row.dragging .drag-handle { cursor: grabbing; color: var(--mint); }
+.cat-admin-row.dragging .drag-handle, .contact-admin-row.dragging .drag-handle { cursor: grabbing; color: var(--mint); }
 .slide-admin-add { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px dashed var(--glass-border); }
 .slide-admin-add input { width: 100%; padding: 9px 11px; border-radius: 9px; border: 1px solid var(--glass-border); background: rgba(255,255,255,.04); color: var(--ink); font-size: 12px; font-family: inherit; outline: none; }
 .slide-admin-add input::placeholder { color: var(--muted); }
@@ -459,7 +459,7 @@ img { -webkit-user-drag: none; }
   border-bottom: 1px solid var(--glass-border); color: var(--mint); font-weight: 700; font-size: 12.5px;
 }
 .contact-sheet-close { border: none; background: none; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
-.contact-sheet-list { padding: 6px 8px; }
+.contact-sheet-list { padding: 6px 8px; max-height: 45vh; overflow-y: auto; }
 .contact-row { display: flex; align-items: center; gap: 10px; padding: 9px 6px; border-bottom: 1px solid var(--glass-border); }
 .contact-row:last-child { border-bottom: none; }
 .contact-avatar {
@@ -467,22 +467,27 @@ img { -webkit-user-drag: none; }
   display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0;
 }
 .contact-meta { flex: 1; min-width: 0; }
-.contact-name { font-size: 12.5px; font-weight: 700; color: var(--ink); }
-.contact-role { font-size: 10.5px; color: var(--muted); }
+.contact-name { font-size: 12.5px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contact-role { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .contact-call-btn {
   display: flex; align-items: center; gap: 6px; background: var(--mint); color: #08150f; text-decoration: none;
   font-size: 11px; font-weight: 700; padding: 7px 10px; border-radius: 10px; flex-shrink: 0; white-space: nowrap;
 }
 .contact-no-phone { font-size: 10px; color: var(--muted); flex-shrink: 0; }
 
-/* ---------- แบบฟอร์มแก้ไขผู้ติดต่อด่วน (แอดมิน) ---------- */
+/* ---------- แบบฟอร์มแก้ไขผู้ติดต่อด่วน (แอดมิน) — เพิ่ม/ลบคนได้อิสระ ไม่ล็อกจำนวนคนตายตัวอีกต่อไป ---------- */
 .contact-admin-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
-.contact-admin-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.contact-admin-row { display: grid; grid-template-columns: auto 1fr 1fr 1fr auto; gap: 6px; align-items: center; }
 .contact-admin-row input {
   padding: 9px 8px; border-radius: 9px; border: 1px solid var(--glass-border); outline: none;
   background: rgba(255,255,255,.04); color: var(--ink); font-size: 11.5px; font-family: inherit; min-width: 0;
 }
 .contact-admin-row input::placeholder { color: var(--muted); }
+.contact-admin-row button {
+  width: 32px; height: 32px; border-radius: 9px; border: 1px solid rgba(255,107,94,.4); background: rgba(255,255,255,.04);
+  color: var(--danger); font-size: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer;
+}
+.contact-add-btn { margin-bottom: 4px; }
 
 /* ---------- หน้าสรุปสำหรับแอดมิน ---------- */
 .stats-loading { font-size: 11.5px; color: var(--muted); padding: 10px 2px; }

@@ -18,7 +18,7 @@
        ทิ้งไป ส่วน CSS ไม่ได้โหลดทั้งไฟล์ของ Bootstrap มา (จะไปทับดีไซน์ธีมเข้มทั้งเว็บ) แต่คัดมาแค่กติกา CSS ที่ตัว
        Carousel JS ต้องพึ่งจริงๆ (คลาส .carousel-item / .carousel-item-next ฯลฯ) มาใส่ไว้ใน style.css แทน -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=21" />
+  <link rel="stylesheet" href="style.css?v=23" />
 </head>
 <body class="pb-tabbar">
 
@@ -164,6 +164,7 @@
       <div id="adminSection-contacts" class="admin-section hidden">
         <div class="cat-collapse-body contact-collapse-body">
           <div id="contactAdminForm" class="contact-admin-form"></div>
+          <button class="btn-secondary contact-add-btn" onclick="handleAddContactRow()"><i class="fas fa-plus"></i> เพิ่มผู้ติดต่อ</button>
           <button class="btn-primary" onclick="handleSaveContacts()"><i class="fas fa-save"></i> บันทึกผู้ติดต่อ</button>
         </div>
       </div>
@@ -236,6 +237,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=21"></script>
+  <script src="script.js?v=23"></script>
 </body>
 </html>

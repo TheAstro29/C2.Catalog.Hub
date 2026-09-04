@@ -1147,32 +1147,150 @@ function closeContactSheet() {
 }
 
 // --- Admin: แก้ไขชื่อ/ตำแหน่ง/เบอร์ผู้ติดต่อด่วน ---
+// เดิมล็อกไว้แค่ 3 คนตายตัว (นพดล/กานต์/เจษฎา) แก้ได้แค่ชื่อ/ตำแหน่ง/เบอร์ — ตอนนี้เพิ่ม/ลบ/ลากจัดลำดับได้อิสระแล้ว
+// ทุกอย่าง (พิมพ์แก้ค่า/เพิ่ม/ลบ/ลากสลับที่) ทำกับ DOM ตรงๆ ก่อน ยังไม่กระทบข้อมูลจริงจนกว่าจะกด "บันทึกผู้ติดต่อ"
+// (ตอนบันทึกจะอ่านค่าจากแถวที่เห็นบนจอ ณ ขณะนั้นเลย ไม่ต้องเก็บ array คู่ขนานแยกให้เสี่ยงข้อมูลไม่ตรงกันตอนลากสลับที่)
 function renderAdminContactForm() {
   const wrap = document.getElementById('contactAdminForm');
   if (!wrap) return;
-  const rows = [0, 1, 2].map(i => {
-    const c = contacts[i] || { name: '', role: '', phone: '' };
-    return `
-      <div class="contact-admin-row">
-        <input type="text" id="contactName${i}" placeholder="ชื่อ" value="${escapeAttr(c.name || '')}">
-        <input type="text" id="contactRole${i}" placeholder="ตำแหน่ง" value="${escapeAttr(c.role || '')}">
-        <input type="tel" id="contactPhone${i}" placeholder="เบอร์โทร" value="${escapeAttr(c.phone || '')}">
-      </div>`;
-  }).join('');
-  wrap.innerHTML = rows;
+  if (!contacts.length) {
+    wrap.innerHTML = `<div class="slide-admin-empty">ยังไม่มีผู้ติดต่อ — กด "เพิ่มผู้ติดต่อ" ด้านล่างนี้ได้เลย</div>`;
+  } else {
+    wrap.innerHTML = contacts.map(c => buildContactRowHtml(c)).join('');
+  }
+  initContactDragDelegation();
+}
+
+/** ความยาวสูงสุดของแต่ละช่อง กันพิมพ์ยาวเกินจนล้นการ์ดผู้ติดต่อหน้าแรก */
+const CONTACT_NAME_MAXLEN = 40;
+const CONTACT_ROLE_MAXLEN = 30;
+const CONTACT_PHONE_MAXLEN = 20;
+
+function buildContactRowHtml(c) {
+  c = c || { name: '', role: '', phone: '' };
+  return `
+    <div class="contact-admin-row">
+      <span class="drag-handle" title="ลากเพื่อจัดลำดับ"><i class="fas fa-grip-lines"></i></span>
+      <input type="text" placeholder="ชื่อ" value="${escapeAttr(c.name || '')}" maxlength="${CONTACT_NAME_MAXLEN}">
+      <input type="text" placeholder="ตำแหน่ง" value="${escapeAttr(c.role || '')}" maxlength="${CONTACT_ROLE_MAXLEN}">
+      <input type="tel" placeholder="เบอร์โทร" value="${escapeAttr(c.phone || '')}" maxlength="${CONTACT_PHONE_MAXLEN}">
+      <button onclick="handleRemoveContactRow(this)" title="ลบผู้ติดต่อนี้"><i class="fas fa-trash"></i></button>
+    </div>`;
+}
+
+function handleAddContactRow() {
+  const wrap = document.getElementById('contactAdminForm');
+  if (!wrap) return;
+  if (!wrap.querySelector('.contact-admin-row')) wrap.innerHTML = ''; // ล้างข้อความ "ยังไม่มีผู้ติดต่อ" ถ้ามีอยู่
+  wrap.insertAdjacentHTML('beforeend', buildContactRowHtml(null));
+  initContactDragDelegation(); // เผื่อ wrap ถูกเคลียร์ innerHTML ทั้งหมดไปตอน "ยังไม่มีผู้ติดต่อ" (dataset ของ wrap ยังอยู่ ฟังก์ชันนี้ no-op ซ้ำได้)
+}
+
+async function handleRemoveContactRow(btn) {
+  const row = btn.closest('.contact-admin-row');
+  if (!row) return;
+  const inputs = row.querySelectorAll('input');
+  const name = (inputs[0].value || '').trim();
+  const phone = (inputs[2].value || '').trim();
+  // ถ้าแถวนี้กรอกข้อมูลไว้แล้ว (ไม่ใช่แถวว่างที่เพิ่งกดเพิ่ม) ถามยืนยันก่อน กันลบโดยไม่ตั้งใจ
+  if (name || phone) {
+    const res = await Swal.fire({ title: `ลบผู้ติดต่อ "${name || phone}"?`, icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', cancelButtonText: 'ยกเลิก' });
+    if (!res.isConfirmed) return;
+  }
+  row.remove();
+  const wrap = document.getElementById('contactAdminForm');
+  if (wrap && !wrap.querySelector('.contact-admin-row')) {
+    wrap.innerHTML = `<div class="slide-admin-empty">ยังไม่มีผู้ติดต่อ — กด "เพิ่มผู้ติดต่อ" ด้านล่างนี้ได้เลย</div>`;
+  }
+}
+
+// --- ลากจัดลำดับผู้ติดต่อ (เทคนิคเดียวกับลากจัดลำดับหมวดหมู่ — Pointer Events ใช้ได้ทั้งเมาส์และนิ้วสัมผัส) ---
+let contactDragState = null;
+
+function initContactDragDelegation() {
+  const list = document.getElementById('contactAdminForm');
+  if (!list || list.dataset.dragBound) return;
+  list.dataset.dragBound = '1';
+
+  list.addEventListener('pointerdown', (e) => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    const row = handle.closest('.contact-admin-row');
+    if (!row) return;
+    e.preventDefault();
+    row.classList.add('dragging');
+    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ไม่เป็นไร */ }
+    contactDragState = { row, pointerId: e.pointerId, listEl: list };
+  });
+
+  list.addEventListener('pointermove', (e) => {
+    if (!contactDragState || contactDragState.pointerId !== e.pointerId) return;
+    const { row, listEl } = contactDragState;
+    const y = e.clientY;
+    const others = Array.from(listEl.querySelectorAll('.contact-admin-row')).filter(r => r !== row);
+    if (!others.length) return;
+
+    let closest = null, closestDist = Infinity;
+    others.forEach((other) => {
+      const rect = other.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      const dist = Math.abs(y - mid);
+      if (dist < closestDist) { closestDist = dist; closest = { el: other, mid }; }
+    });
+    if (!closest) return;
+
+    const target = y < closest.mid ? closest.el : closest.el.nextSibling;
+    if (target === row) return;
+    if (target === null) {
+      if (listEl.lastElementChild === row) return;
+    } else if (target.previousElementSibling === row) {
+      return;
+    }
+
+    // FLIP: เลื่อนแถวอื่นที่โดนสลับที่แบบนุ่มนวล ส่วนแถวที่กำลังลากอยู่ขยับตามนิ้ว/เมาส์ตรงๆ ทันที
+    const firstRects = new Map(Array.from(listEl.querySelectorAll('.contact-admin-row')).map(r => [r, r.getBoundingClientRect()]));
+    listEl.insertBefore(row, target);
+    Array.from(listEl.querySelectorAll('.contact-admin-row')).forEach((r) => {
+      if (r === row) return;
+      const first = firstRects.get(r);
+      const last = r.getBoundingClientRect();
+      const dy = first.top - last.top;
+      if (!dy) return;
+      r.style.transition = 'none';
+      r.style.transform = `translateY(${dy}px)`;
+      requestAnimationFrame(() => {
+        r.style.transition = 'transform .18s ease';
+        r.style.transform = '';
+      });
+    });
+  });
+
+  const endContactDrag = (e) => {
+    if (!contactDragState || contactDragState.pointerId !== e.pointerId) return;
+    contactDragState.row.classList.remove('dragging');
+    contactDragState = null;
+    // ไม่ต้องบันทึกทันที — ลำดับใหม่จะถูกอ่านจากหน้าจอตอนกด "บันทึกผู้ติดต่อ" เหมือนค่าฟิลด์อื่นๆ ที่พิมพ์แก้ไว้
+  };
+  list.addEventListener('pointerup', endContactDrag);
+  list.addEventListener('pointercancel', endContactDrag);
 }
 
 async function handleSaveContacts() {
-  const newContacts = [0, 1, 2].map(i => ({
-    name: (document.getElementById(`contactName${i}`).value || '').trim(),
-    role: (document.getElementById(`contactRole${i}`).value || '').trim(),
-    phone: (document.getElementById(`contactPhone${i}`).value || '').trim(),
-  }));
+  const wrap = document.getElementById('contactAdminForm');
+  const rows = wrap ? Array.from(wrap.querySelectorAll('.contact-admin-row')) : [];
+  const cleaned = rows.map((row) => {
+    const inputs = row.querySelectorAll('input');
+    return {
+      name: (inputs[0].value || '').trim(),
+      role: (inputs[1].value || '').trim(),
+      phone: (inputs[2].value || '').trim(),
+    };
+  }).filter(c => c.name || c.phone); // ตัดแถวว่างเปล่าทิ้งก่อนบันทึก (เผื่อกด "เพิ่ม" แล้วไม่ได้กรอกอะไร)
   const ok = await sendToCloud(
-    { action: 'updateContacts', contacts: newContacts },
-    { closeModalOnSuccess: false, onSuccess: () => { contacts = newContacts; try { localStorage.setItem(CACHE_KEY_CONTACTS, JSON.stringify(contacts)); } catch (e) {} renderContactFab(); } }
+    { action: 'updateContacts', contacts: cleaned },
+    { closeModalOnSuccess: false, onSuccess: () => { contacts = cleaned; try { localStorage.setItem(CACHE_KEY_CONTACTS, JSON.stringify(contacts)); } catch (e) {} renderContactFab(); } }
   );
-  if (ok) { contacts = newContacts; renderContactFab(); }
+  if (ok) { contacts = cleaned; renderContactFab(); renderAdminContactForm(); }
 }
 
 // ============================================================
