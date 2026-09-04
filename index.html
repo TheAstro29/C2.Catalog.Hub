@@ -18,7 +18,7 @@
        ทิ้งไป ส่วน CSS ไม่ได้โหลดทั้งไฟล์ของ Bootstrap มา (จะไปทับดีไซน์ธีมเข้มทั้งเว็บ) แต่คัดมาแค่กติกา CSS ที่ตัว
        Carousel JS ต้องพึ่งจริงๆ (คลาส .carousel-item / .carousel-item-next ฯลฯ) มาใส่ไว้ใน style.css แทน -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=15" />
+  <link rel="stylesheet" href="style.css?v=21" />
 </head>
 <body class="pb-tabbar">
 
@@ -27,6 +27,26 @@
   <div id="imageOverlay" onclick="this.style.display='none'; if (typeof restartHeroAutoplay === 'function') restartHeroAutoplay();">
     <img id="overlayImg" src="" alt="Preview">
     <div class="overlay-hint">แตะที่ว่างเพื่อปิด</div>
+  </div>
+
+  <!-- แบนเนอร์ "เพิ่มลงหน้าจอหลัก" — โผล่เองเมื่อเบราว์เซอร์รองรับ/ยังไม่เคยติดตั้ง ปิดแล้วจะไม่โผล่ซ้ำ -->
+  <div id="installBanner" class="install-banner hidden no-print">
+    <i class="fas fa-mobile-screen-button install-banner-icon"></i>
+    <div class="install-banner-text" id="installBannerText">ติดตั้ง Catalog Hub ไว้ที่หน้าจอหลัก</div>
+    <button id="installBannerBtn" class="install-banner-btn" onclick="handleInstallClick()">ติดตั้ง</button>
+    <button class="install-banner-close" onclick="dismissInstallBanner()">&times;</button>
+  </div>
+
+  <!-- ปุ่มติดต่อด่วนลอย — โทรหา นพดล/กานต์/เจษฎา ได้ทันที (แก้ไขชื่อ/ตำแหน่ง/เบอร์ได้จากหน้าแอดมิน) -->
+  <button id="contactFab" class="contact-fab hidden no-print" onclick="toggleContactSheet()" title="ติดต่อด่วน">
+    <i class="fas fa-headset"></i>
+  </button>
+  <div id="contactSheet" class="contact-sheet hidden no-print">
+    <div class="contact-sheet-head">
+      <span><i class="fas fa-headset"></i> ติดต่อด่วน</span>
+      <button class="contact-sheet-close" onclick="closeContactSheet()">&times;</button>
+    </div>
+    <div id="contactSheetList" class="contact-sheet-list"></div>
   </div>
 
   <header class="hdr no-print">
@@ -40,6 +60,7 @@
           </div>
         </div>
         <div class="hdr-icons">
+          <button id="themeToggleBtn" class="hdr-icon-btn" onclick="toggleTheme()" title="สลับโหมดสว่าง/มืด"><i id="themeToggleIcon" class="fas fa-sun"></i></button>
           <button id="webQrBtn" class="hdr-icon-btn" onclick="showWebQR()" title="QR เว็บ"><i class="fas fa-qrcode"></i></button>
           <button id="adminBtn" class="hdr-icon-btn admin hidden" onclick="openAdminModal()" title="จัดการระบบ"><i class="fas fa-toolbox"></i></button>
           <button id="logoutBtn" class="hdr-icon-btn danger hidden" onclick="handleLogout()" title="ออกจากระบบแอดมิน"><i class="fas fa-lock"></i></button>
@@ -80,32 +101,56 @@
     </div>
   </div>
 
+  <!-- หน้าต่างจัดการระบบ — เข้ามาเจอเมนูหลักแบบ grid ก่อน (คล้าย C2 Loop) กดการ์ดไหนค่อยเข้าไปหน้านั้นๆ
+       ทีละหน้า มีปุ่มย้อนกลับที่หัวข้อต่างจากเดิมที่เป็นแถบพับ-กางเรียงต่อกันยาวๆ -->
   <div id="adminModal" class="modal-overlay hidden">
     <div class="modal-content">
       <div class="modal-head">
+        <button id="adminBackBtn" class="modal-back-btn hidden" onclick="backToAdminMenu()"><i class="fas fa-arrow-left"></i></button>
         <h2 id="modalTitle"><i class="fas fa-toolbox"></i> จัดการระบบ</h2>
         <button class="modal-close" onclick="closeModal()">&times;</button>
       </div>
 
-      <div class="cat-collapse">
-        <div class="cat-collapse-head" onclick="toggleCatCollapse()">
-          <span><i class="fas fa-folder"></i> จัดการหมวดหมู่</span>
-          <span id="catCollapseArrow">▾</span>
-        </div>
-        <div class="cat-collapse-body hidden" id="catCollapseBody">
-          <input type="text" id="newCatInput" placeholder="ชื่อหมวด...">
-          <button class="icon-sq-btn" onclick="handleAddCat()"><i class="fas fa-plus"></i></button>
-          <button class="icon-sq-btn danger" onclick="handleDelCat()"><i class="fas fa-trash"></i></button>
+      <!-- เมนูหลัก -->
+      <div id="adminMainMenu" class="admin-menu-grid">
+        <button class="admin-menu-tile" onclick="openAdminSection('product')">
+          <span class="admin-menu-icon" style="background:#3D6BC4"><i class="fas fa-box"></i></span>
+          <span class="admin-menu-label">จัดการสินค้า</span>
+        </button>
+        <button class="admin-menu-tile" onclick="openAdminSection('category')">
+          <span class="admin-menu-icon" style="background:#C99A3B"><i class="fas fa-folder"></i></span>
+          <span class="admin-menu-label">หมวดหมู่</span>
+        </button>
+        <button class="admin-menu-tile" onclick="openAdminSection('slides')">
+          <span class="admin-menu-icon" style="background:#8B6FE0"><i class="fas fa-images"></i></span>
+          <span class="admin-menu-label">สไลด์หน้าแรก</span>
+        </button>
+        <button class="admin-menu-tile" onclick="openAdminSection('contacts')">
+          <span class="admin-menu-icon" style="background:#3AA6A6"><i class="fas fa-headset"></i></span>
+          <span class="admin-menu-label">ผู้ติดต่อด่วน</span>
+        </button>
+        <button class="admin-menu-tile" onclick="openAdminSection('stats')">
+          <span class="admin-menu-icon" style="background:#3F654D"><i class="fas fa-chart-simple"></i></span>
+          <span class="admin-menu-label">สรุปข้อมูล</span>
+        </button>
+      </div>
+
+      <!-- หน้าจัดการหมวดหมู่ — แสดงทุกหมวดที่มีอยู่เป็นรายการ พร้อมไอคอนแก้ไข/ลบท้ายแต่ละแถว -->
+      <div id="adminSection-category" class="admin-section hidden">
+        <div class="cat-collapse-body slide-collapse-body">
+          <div id="catAdminList" class="slide-admin-list"></div>
+          <!-- ลากจัดลำดับได้อิสระก่อน ไม่บันทึกทันทีทีละครั้ง — กดปุ่มนี้ตอนจัดเสร็จแล้วค่อยบันทึกทีเดียว -->
+          <button id="catSaveOrderBtn" class="btn-primary hidden" onclick="handleSaveCatOrder()"><i class="fas fa-save"></i> บันทึกลำดับหมวดหมู่</button>
+          <div class="slide-admin-add">
+            <input type="text" id="newCatInput" placeholder="ชื่อหมวดหมู่ใหม่...">
+            <button class="btn-primary" onclick="handleAddCat()"><i class="fas fa-plus"></i> เพิ่มหมวดหมู่</button>
+          </div>
         </div>
       </div>
 
-      <!-- จัดการสไลด์หน้าแรก — Admin วางแค่ลิงก์รูป + ลิงก์ไฟล์ที่จะเปิด (Google Drive ทั้งคู่ เหมือนตอนเพิ่มสินค้า) -->
-      <div class="cat-collapse">
-        <div class="cat-collapse-head" onclick="toggleSlideCollapse()">
-          <span><i class="fas fa-images"></i> จัดการสไลด์หน้าแรก</span>
-          <span id="slideCollapseArrow">▾</span>
-        </div>
-        <div class="cat-collapse-body slide-collapse-body hidden" id="slideCollapseBody">
+      <!-- หน้าจัดการสไลด์หน้าแรก — Admin วางแค่ลิงก์รูป + ลิงก์ไฟล์ที่จะเปิด (Google Drive ทั้งคู่ เหมือนตอนเพิ่มสินค้า) -->
+      <div id="adminSection-slides" class="admin-section hidden">
+        <div class="cat-collapse-body slide-collapse-body">
           <div id="slideAdminList" class="slide-admin-list"></div>
           <div class="slide-admin-add">
             <input type="text" id="newSlideImgInput" placeholder="ลิงก์รูปภาพ (Google Drive)">
@@ -115,38 +160,56 @@
         </div>
       </div>
 
-      <div class="form-stack">
-        <input type="hidden" id="editOldTitle">
-        <div class="form-field">
-          <label class="label-mini">ชื่อรุ่นสินค้า <span class="req">*</span></label>
-          <input type="text" id="inputTitle" placeholder="เช่น Gateway EPG-001B">
+      <!-- หน้าผู้ติดต่อด่วน — แก้ไขชื่อ/ตำแหน่ง/เบอร์ของทั้ง 3 คน ที่แสดงในปุ่มลอยหน้าแรก -->
+      <div id="adminSection-contacts" class="admin-section hidden">
+        <div class="cat-collapse-body contact-collapse-body">
+          <div id="contactAdminForm" class="contact-admin-form"></div>
+          <button class="btn-primary" onclick="handleSaveContacts()"><i class="fas fa-save"></i> บันทึกผู้ติดต่อ</button>
         </div>
-        <div class="form-field">
-          <label class="label-mini">หมวดหมู่ <span class="req">*</span></label>
-          <select id="inputCat"></select>
+      </div>
+
+      <!-- หน้าสรุปสำหรับแอดมิน — จำนวนสินค้า/หมวดหมู่/ยอดแชร์ + สินค้ายอดนิยม 5 อันดับ -->
+      <div id="adminSection-stats" class="admin-section hidden">
+        <div class="cat-collapse-body contact-collapse-body">
+          <div id="statsContent"></div>
         </div>
-        <div class="form-field">
-          <label class="label-mini">ประเภทไฟล์</label>
-          <div class="type-pills" id="typePills">
-            <div class="type-pill active" data-type="pdf" onclick="selectFileType('pdf')"><span class="ic">📄</span>PDF</div>
-            <div class="type-pill" data-type="video" onclick="selectFileType('video')"><span class="ic">🎬</span>วิดีโอ</div>
-            <div class="type-pill" data-type="image" onclick="selectFileType('image')"><span class="ic">🖼️</span>รูปภาพ</div>
-            <div class="type-pill" data-type="other" onclick="selectFileType('other')"><span class="ic">🔗</span>อื่นๆ</div>
+      </div>
+
+      <!-- หน้าจัดการสินค้า (เพิ่ม/แก้ไข) -->
+      <div id="adminSection-product" class="admin-section hidden">
+        <div class="form-stack">
+          <input type="hidden" id="editOldTitle">
+          <div class="form-field">
+            <label class="label-mini">ชื่อรุ่นสินค้า <span class="req">*</span></label>
+            <input type="text" id="inputTitle" placeholder="เช่น Gateway EPG-001B">
           </div>
-          <div class="auto-detect-chip hidden" id="autoDetectChip"><i class="fas fa-check"></i> <span id="autoDetectText"></span></div>
-        </div>
-        <div class="form-field">
-          <label class="label-mini">ลิงก์ Google Drive <span class="req">*</span></label>
-          <input type="text" id="inputLink" placeholder="https://drive.google.com/..." oninput="updateLinkPreview()">
-          <div class="link-preview hidden" id="linkPreview">
-            <div class="lp-thumb" id="lpThumbWrap"><img id="lpThumbImg" src="" alt=""></div>
-            <div class="link-preview-text"><b>เจอไฟล์แล้ว ✓</b>พรีวิวนี้คือรูปที่จะแสดงในแคตตาล็อก ตรวจสอบให้แน่ใจว่าเป็นไฟล์ที่ถูกต้องก่อนบันทึก</div>
+          <div class="form-field">
+            <label class="label-mini">หมวดหมู่ <span class="req">*</span></label>
+            <select id="inputCat"></select>
           </div>
-          <div class="hint">วางลิงก์ที่แชร์แบบ "ทุกคนที่มีลิงก์ดูได้" จาก Google Drive</div>
-        </div>
-        <div class="form-actions">
-          <button id="mainActionBtn" class="btn-primary" onclick="handleProductAction()">บันทึกข้อมูลสินค้า</button>
-          <button onclick="resetToAddMode()" id="resetBtn" class="btn-text hidden">ยกเลิกแก้ไข / เพิ่มใหม่</button>
+          <div class="form-field">
+            <label class="label-mini">ประเภทไฟล์</label>
+            <div class="type-pills" id="typePills">
+              <div class="type-pill active" data-type="pdf" onclick="selectFileType('pdf')"><span class="ic">📄</span>PDF</div>
+              <div class="type-pill" data-type="video" onclick="selectFileType('video')"><span class="ic">🎬</span>วิดีโอ</div>
+              <div class="type-pill" data-type="image" onclick="selectFileType('image')"><span class="ic">🖼️</span>รูปภาพ</div>
+              <div class="type-pill" data-type="other" onclick="selectFileType('other')"><span class="ic">🔗</span>อื่นๆ</div>
+            </div>
+            <div class="auto-detect-chip hidden" id="autoDetectChip"><i class="fas fa-check"></i> <span id="autoDetectText"></span></div>
+          </div>
+          <div class="form-field">
+            <label class="label-mini">ลิงก์ Google Drive <span class="req">*</span></label>
+            <input type="text" id="inputLink" placeholder="https://drive.google.com/..." oninput="updateLinkPreview()">
+            <div class="link-preview hidden" id="linkPreview">
+              <div class="lp-thumb" id="lpThumbWrap"><img id="lpThumbImg" src="" alt=""></div>
+              <div class="link-preview-text"><b>เจอไฟล์แล้ว ✓</b>พรีวิวนี้คือรูปที่จะแสดงในแคตตาล็อก ตรวจสอบให้แน่ใจว่าเป็นไฟล์ที่ถูกต้องก่อนบันทึก</div>
+            </div>
+            <div class="hint">วางลิงก์ที่แชร์แบบ "ทุกคนที่มีลิงก์ดูได้" จาก Google Drive</div>
+          </div>
+          <div class="form-actions">
+            <button id="mainActionBtn" class="btn-primary" onclick="handleProductAction()">บันทึกข้อมูลสินค้า</button>
+            <button onclick="resetToAddMode()" id="resetBtn" class="btn-text hidden">ยกเลิกแก้ไข / เพิ่มใหม่</button>
+          </div>
         </div>
       </div>
     </div>
@@ -173,6 +236,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=15"></script>
+  <script src="script.js?v=21"></script>
 </body>
 </html>

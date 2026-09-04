@@ -11,10 +11,18 @@ const CACHE_KEY_PRODUCTS = 'catalogHub_products_v2';
 const CACHE_KEY_CATEGORIES = 'catalogHub_categories_v2';
 const CACHE_KEY_SLIDES = 'catalogHub_slides_v1';
 const CACHE_KEY_SYNC_TIME = 'catalogHub_lastSync_v2';
+const CACHE_KEY_CONTACTS = 'catalogHub_contacts_v1';
+const CACHE_KEY_THEME = 'catalogHub_theme_v1';
+const CACHE_KEY_INSTALL_DISMISSED = 'catalogHub_installDismissed_v1';
 
 let catalogs = [];
 let categories = [];
 let slides = []; // [{ imageUrl, linkUrl }]
+let contacts = [
+  { name: 'นพดล', role: 'CEO', phone: '' },
+  { name: 'กานต์', role: 'COO', phone: '' },
+  { name: 'เจษฎา', role: 'Marketing', phone: '' },
+];
 let currentFilter = 'all';
 let currentSearch = '';
 let currentAction = 'add';
@@ -28,8 +36,11 @@ function init() {
   loadFromCache();
   fetchData();
   loadSlides();
+  loadContacts();
   setupPullToRefresh();
   registerServiceWorker();
+  initTheme();
+  initInstallBanner();
 }
 
 // --- แคชข้อมูลไว้ใช้ตอนออฟไลน์ (แสดงผลได้ทันทีจากแคชก่อน แล้วค่อยรีเฟรชเงียบๆ เมื่อมีเน็ต) ---
@@ -50,6 +61,11 @@ function loadFromCache() {
     if (cachedSlides) {
       slides = JSON.parse(cachedSlides);
       renderHeroSlider();
+    }
+    const cachedContacts = localStorage.getItem(CACHE_KEY_CONTACTS);
+    if (cachedContacts) {
+      contacts = JSON.parse(cachedContacts);
+      renderContactFab();
     }
   } catch (e) { /* แคชเสีย ไม่เป็นไร ปล่อยให้ fetchData/loadSlides โหลดสดแทน */ }
 }
@@ -264,14 +280,6 @@ function updateCatDropdown() {
 // ============================================================
 // ประเภทไฟล์ (PDF / วิดีโอ / รูปภาพ / อื่นๆ) + พรีวิวลิงก์ในฟอร์มเพิ่ม/แก้ไขสินค้า
 // ============================================================
-function toggleCatCollapse() {
-  const body = document.getElementById('catCollapseBody');
-  const arrow = document.getElementById('catCollapseArrow');
-  const willOpen = body.classList.contains('hidden');
-  body.classList.toggle('hidden');
-  arrow.textContent = willOpen ? '▴' : '▾';
-}
-
 function fileTypeLabel(type) {
   return { pdf: 'PDF', video: 'วิดีโอ', image: 'รูปภาพ', other: 'ไฟล์อื่นๆ' }[type] || 'ไฟล์';
 }
@@ -441,12 +449,25 @@ function shareSelectionToLine() {
   const items = catalogs.filter(it => selectedIdx.has(it._idx));
   if (!items.length) return;
   openLineShare(buildLineShareText(items));
+  logShare_(items.map(it => it.title));
 }
 
 function shareSingleToLine(idx) {
   const item = catalogs.find(it => it._idx === idx);
   if (!item) return;
   openLineShare(`${item.title}\n${item.link}`);
+  logShare_([item.title]);
+}
+
+/** บันทึกสถิติการแชร์ไปที่ backend (ใช้ในหน้าสรุปแอดมิน) — ยิงแบบ fire-and-forget ไม่ต้องรอผล/ไม่ต้อง token
+ * เพราะเป็นแค่การนับสถิติ ไม่ใช่ข้อมูลลับ พังก็ไม่กระทบการแชร์ของผู้ใช้ทั่วไป */
+function logShare_(titles) {
+  try {
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'logShare', titles: titles }),
+    }).catch(() => {});
+  } catch (e) { /* เงียบไว้ — ไม่ให้กระทบการใช้งานจริง */ }
 }
 
 // ============================================================
@@ -465,17 +486,182 @@ async function handleProductAction() {
   await sendToCloud(p);
 }
 
+/** หน้าจัดการหมวดหมู่ — แสดงทุกหมวดที่มีอยู่เป็นรายการพร้อมไอคอนแก้ไข/ลบท้ายแถว (เหมือนรูปแบบจัดการสไลด์)
+ * และลากที่ไอคอน ☰ ด้านหน้าเพื่อจัดลำดับใหม่ได้ — ลากจัดได้อิสระหลายรอบก่อน ไม่บันทึกให้ทันทีทีละครั้ง
+ * ต้องกดปุ่ม "บันทึกลำดับหมวดหมู่" เองตอนจัดเสร็จแล้ว (ลำดับนี้เป็นลำดับเดียวกับที่ใช้แสดงแท็บหมวดหมู่หน้าแรก) */
+let catOrderDirty = false; // true = ลากจัดลำดับไว้แล้วแต่ยังไม่ได้กดบันทึก
+
+function renderAdminCatList() {
+  const list = document.getElementById('catAdminList');
+  if (!list) return;
+  catOrderDirty = false;
+  const saveOrderBtn = document.getElementById('catSaveOrderBtn');
+  if (saveOrderBtn) saveOrderBtn.classList.add('hidden');
+  if (!categories.length) {
+    list.innerHTML = `<div class="slide-admin-empty">ยังไม่มีหมวดหมู่ — เพิ่มหมวดแรกด้านล่างนี้ได้เลย</div>`;
+    return;
+  }
+  list.innerHTML = categories.map(cat => `
+    <div class="cat-admin-row" data-cat="${escapeAttr(cat)}">
+      <span class="drag-handle" title="ลากเพื่อจัดลำดับ"><i class="fas fa-grip-lines"></i></span>
+      <div class="cat-admin-name"><i class="fas fa-folder"></i> ${escapeHtml(cat)}</div>
+      <div class="slide-admin-actions">
+        <button class="edit" onclick="handleEditCat('${jsAttrString(cat)}')" title="แก้ไขชื่อหมวดนี้"><i class="fas fa-pen"></i></button>
+        <button class="danger" onclick="handleDelCat('${jsAttrString(cat)}')" title="ลบหมวดนี้"><i class="fas fa-trash"></i></button>
+      </div>
+    </div>`).join('');
+  initCatDragDelegation();
+}
+
+// --- ลากจัดลำดับหมวดหมู่ (Pointer Events — ใช้ตัวเดียวกันได้ทั้งเมาส์และนิ้วสัมผัส) ---
+let catDragState = null;
+
+function initCatDragDelegation() {
+  const list = document.getElementById('catAdminList');
+  // ผูก listener แค่ครั้งเดียวตลอดอายุเพจ (กันไม่ให้ซ้อนกันทุกครั้งที่ renderAdminCatList() วาดใหม่)
+  // ตัว element #catAdminList เองไม่ได้ถูกสร้างใหม่ แค่ innerHTML ข้างในถูกแทนที่ ผูกซ้ำได้เลยไม่หลุด
+  if (!list || list.dataset.dragBound) return;
+  list.dataset.dragBound = '1';
+
+  list.addEventListener('pointerdown', (e) => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    const row = handle.closest('.cat-admin-row');
+    if (!row) return;
+    e.preventDefault();
+    row.classList.add('dragging');
+    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ไม่เป็นไร */ }
+    catDragState = { row, pointerId: e.pointerId, listEl: list };
+  });
+
+  list.addEventListener('pointermove', (e) => {
+    if (!catDragState || catDragState.pointerId !== e.pointerId) return;
+    const { row, listEl } = catDragState;
+    const y = e.clientY;
+    const others = Array.from(listEl.querySelectorAll('.cat-admin-row')).filter(r => r !== row);
+    if (!others.length) return;
+
+    // หาแถวที่ "ใกล้" ตำแหน่งนิ้ว/เมาส์ที่สุด (เทียบระยะจากจุดกึ่งกลางแนวตั้ง) แทนการไล่เช็คทีละแถวตามลำดับ DOM
+    // แบบเดิม — วิธีเดิมพอลากเร็วๆ ข้ามหลายแถวในเฟรมเดียวจะเลือกแถวผิดพลาด กลายเป็นอาการเด้ง/สะดุดที่แจ้งมา
+    let closest = null, closestDist = Infinity;
+    others.forEach((other) => {
+      const rect = other.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      const dist = Math.abs(y - mid);
+      if (dist < closestDist) { closestDist = dist; closest = { el: other, mid }; }
+    });
+    if (!closest) return;
+
+    const target = y < closest.mid ? closest.el : closest.el.nextSibling;
+    // ถ้าตำแหน่งเป้าหมายเหมือนตำแหน่งปัจจุบันอยู่แล้ว ไม่ต้องขยับซ้ำ (กันสลับไปมาถี่ๆ ตอนนิ้ว/เมาส์นิ่งใกล้เส้นแบ่งแถว)
+    if (target === row) return;
+    if (target === null) {
+      if (listEl.lastElementChild === row) return;
+    } else if (target.previousElementSibling === row) {
+      return;
+    }
+
+    // FLIP technique: จำตำแหน่งเดิมของทุกแถวไว้ก่อนสลับ แล้วเล่นแอนิเมชันเลื่อนแถวอื่นๆ ที่ขยับเข้าที่ใหม่แบบนุ่มนวล
+    // (แถวที่กำลังลากอยู่ให้ขยับตามนิ้ว/เมาส์ตรงๆ ทันที ไม่ต้องเล่นแอนิเมชัน)
+    const firstRects = new Map(Array.from(listEl.querySelectorAll('.cat-admin-row')).map(r => [r, r.getBoundingClientRect()]));
+    listEl.insertBefore(row, target);
+    Array.from(listEl.querySelectorAll('.cat-admin-row')).forEach((r) => {
+      if (r === row) return;
+      const first = firstRects.get(r);
+      const last = r.getBoundingClientRect();
+      const dy = first.top - last.top;
+      if (!dy) return;
+      r.style.transition = 'none';
+      r.style.transform = `translateY(${dy}px)`;
+      requestAnimationFrame(() => {
+        r.style.transition = 'transform .18s ease';
+        r.style.transform = '';
+      });
+    });
+  });
+
+  // ปล่อยมือ — แค่ทำเครื่องหมายว่ามีการจัดลำดับค้างไว้ (ยังไม่ยิงบันทึกไปเซิร์ฟเวอร์ทันที) แล้วโชว์ปุ่ม
+  // "บันทึกลำดับหมวดหมู่" ให้ admin ลากจัดต่อได้เรื่อยๆ กี่รอบก็ได้ก่อน ค่อยกดบันทึกทีเดียวตอนจัดเสร็จ
+  const endCatDrag = (e) => {
+    if (!catDragState || catDragState.pointerId !== e.pointerId) return;
+    const { row } = catDragState;
+    row.classList.remove('dragging');
+    catDragState = null;
+    catOrderDirty = true;
+    const saveOrderBtn = document.getElementById('catSaveOrderBtn');
+    if (saveOrderBtn) saveOrderBtn.classList.remove('hidden');
+  };
+  list.addEventListener('pointerup', endCatDrag);
+  list.addEventListener('pointercancel', endCatDrag);
+}
+
+/** กดปุ่ม "บันทึกลำดับหมวดหมู่" — อ่านลำดับปัจจุบันจาก DOM (ตามที่ลากจัดไว้) แล้วค่อยส่งไปบันทึกที่เซิร์ฟเวอร์ทีเดียว */
+async function handleSaveCatOrder() {
+  const list = document.getElementById('catAdminList');
+  if (!list) return;
+  const order = Array.from(list.querySelectorAll('.cat-admin-row')).map(r => r.dataset.cat);
+  await handleReorderCat(order);
+}
+
+/** บันทึกลำดับหมวดหมู่ใหม่ไปที่เซิร์ฟเวอร์ — อัปเดตหน้าจอทันที (optimistic) แล้วค่อยยืนยันกับเซิร์ฟเวอร์
+ * ถ้าบันทึกไม่สำเร็จ (เช่นมีคนแก้หมวดหมู่จากที่อื่นพร้อมกัน) จะรีเฟรชข้อมูลจริงจากเซิร์ฟเวอร์แล้ววาดใหม่ให้ตรงกัน */
+async function handleReorderCat(order) {
+  categories = order;
+  renderTabs();
+  updateCatDropdown();
+  persistCache();
+  const ok = await sendToCloud(
+    { action: 'reorderCat', order },
+    { closeModalOnSuccess: false, onSuccess: refreshCatAdminView }
+  );
+  if (ok) {
+    catOrderDirty = false;
+    const saveOrderBtn = document.getElementById('catSaveOrderBtn');
+    if (saveOrderBtn) saveOrderBtn.classList.add('hidden');
+  } else {
+    fetchData(true);
+    setTimeout(renderAdminCatList, 950);
+  }
+}
+
+/** รีเฟรชรายการหมวดหมู่จากเซิร์ฟเวอร์แล้ววาดหน้าแอดมินใหม่ — ใช้หลัง add/edit/delete หมวดหมู่สำเร็จ */
+function refreshCatAdminView() {
+  fetchData(true);
+  setTimeout(renderAdminCatList, 950);
+}
+
 async function handleAddCat() {
   const name = document.getElementById('newCatInput').value.trim();
   if (!name) return;
-  const ok = await sendToCloud({ action: 'addCat', catName: name });
+  const ok = await sendToCloud(
+    { action: 'addCat', catName: name },
+    { closeModalOnSuccess: false, onSuccess: refreshCatAdminView }
+  );
   if (ok) document.getElementById('newCatInput').value = '';
 }
 
-async function handleDelCat() {
-  const name = document.getElementById('inputCat').value;
-  const res = await Swal.fire({ title: `ลบหมวด "${name}"?`, icon: 'warning', showCancelButton: true });
-  if (res.isConfirmed) await sendToCloud({ action: 'deleteCat', oldCatName: name });
+async function handleEditCat(oldName) {
+  const { value: newName } = await Swal.fire({
+    title: 'แก้ไขชื่อหมวดหมู่', input: 'text', inputValue: oldName,
+    showCancelButton: true, confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก',
+  });
+  if (!newName || !newName.trim() || newName.trim() === oldName) return;
+  await sendToCloud(
+    { action: 'editCat', oldCatName: oldName, catName: newName.trim() },
+    { closeModalOnSuccess: false, onSuccess: refreshCatAdminView }
+  );
+}
+
+async function handleDelCat(name) {
+  const res = await Swal.fire({
+    title: `ลบหมวด "${name}"?`, icon: 'warning', showCancelButton: true,
+    confirmButtonText: 'ลบ', cancelButtonText: 'ยกเลิก',
+  });
+  if (!res.isConfirmed) return;
+  await sendToCloud(
+    { action: 'deleteCat', oldCatName: name },
+    { closeModalOnSuccess: false, onSuccess: refreshCatAdminView }
+  );
 }
 
 function confirmDeleteProduct(idx) {
@@ -522,14 +708,81 @@ async function sendToCloud(p, opts) {
   }
 }
 
-function openAdminModal() { document.getElementById('adminModal').classList.remove('hidden'); }
-function closeModal() { document.getElementById('adminModal').classList.add('hidden'); resetToAddMode(); }
+// ============================================================
+// หน้าต่างจัดการระบบ — เมนูหลักแบบ grid (คล้าย C2 Loop) กดการ์ดไหนค่อยเข้าไปหน้านั้นทีละหน้า
+// ============================================================
+const ADMIN_SECTION_META = {
+  category: { title: 'จัดการหมวดหมู่', icon: 'fa-folder' },
+  slides: { title: 'จัดการสไลด์หน้าแรก', icon: 'fa-images' },
+  contacts: { title: 'ผู้ติดต่อด่วน', icon: 'fa-headset' },
+  stats: { title: 'สรุปข้อมูล', icon: 'fa-chart-simple' },
+  product: { title: 'จัดการสินค้า', icon: 'fa-box' },
+};
+
+function openAdminModal() {
+  document.getElementById('adminModal').classList.remove('hidden');
+  showAdminMainMenu();
+}
+
+async function closeModal() {
+  // เช็คลำดับหมวดหมู่ที่ลากค้างไว้แบบเดียวกับปุ่มย้อนกลับ กันปิดหน้าต่างทั้งอันไปเฉยๆ แล้วลำดับที่จัดไว้หาย
+  if (catOrderDirty) {
+    const res = await Swal.fire({
+      title: 'ยังไม่ได้บันทึกลำดับหมวดหมู่', text: 'ปิดหน้าต่างนี้ลำดับที่จัดไว้จะหายไป ต้องการปิดเลยไหม?',
+      icon: 'warning', showCancelButton: true, confirmButtonText: 'ปิดโดยไม่บันทึก', cancelButtonText: 'อยู่ต่อ',
+    });
+    if (!res.isConfirmed) return;
+    catOrderDirty = false;
+  }
+  document.getElementById('adminModal').classList.add('hidden');
+  resetToAddMode();
+  showAdminMainMenu();
+}
+
+/** กลับไปหน้าเมนูหลักของ "จัดการระบบ" — ซ่อนทุกหน้าย่อย โชว์ grid เมนู ซ่อนปุ่มย้อนกลับ */
+function showAdminMainMenu() {
+  document.getElementById('adminMainMenu').classList.remove('hidden');
+  document.querySelectorAll('.admin-section').forEach(el => el.classList.add('hidden'));
+  document.getElementById('adminBackBtn').classList.add('hidden');
+  document.getElementById('modalTitle').innerHTML = '<i class="fas fa-toolbox"></i> จัดการระบบ';
+}
+
+/** เปิดหน้าย่อยตามชื่อ (category/slides/contacts/stats/product) — โหลดข้อมูลของหน้านั้นให้สดใหม่ทุกครั้งที่เข้า */
+function openAdminSection(name) {
+  const meta = ADMIN_SECTION_META[name];
+  if (!meta) return;
+  document.getElementById('adminMainMenu').classList.add('hidden');
+  document.querySelectorAll('.admin-section').forEach(el => el.classList.add('hidden'));
+  const section = document.getElementById('adminSection-' + name);
+  if (section) section.classList.remove('hidden');
+  document.getElementById('adminBackBtn').classList.remove('hidden');
+  document.getElementById('modalTitle').innerHTML = `<i class="fas ${meta.icon}"></i> ${meta.title}`;
+
+  if (name === 'category') renderAdminCatList();
+  if (name === 'slides') renderAdminSlideList();
+  if (name === 'contacts') renderAdminContactForm();
+  if (name === 'stats') loadStats();
+}
+
+/** ปุ่มย้อนกลับที่หัว modal — ถ้ากำลังแก้ไขสินค้าค้างอยู่ ให้ยกเลิกโหมดแก้ไขไปด้วยกันเลย */
+async function backToAdminMenu() {
+  // ถ้าลากจัดลำดับหมวดหมู่ค้างไว้แล้วยังไม่ได้กดบันทึก ถามยืนยันก่อนออกไป กันลากเสร็จแล้วลืมกดบันทึกโดยไม่ได้ตั้งใจ
+  if (catOrderDirty) {
+    const res = await Swal.fire({
+      title: 'ยังไม่ได้บันทึกลำดับหมวดหมู่', text: 'ออกจากหน้านี้ลำดับที่จัดไว้จะหายไป ต้องการออกเลยไหม?',
+      icon: 'warning', showCancelButton: true, confirmButtonText: 'ออกโดยไม่บันทึก', cancelButtonText: 'อยู่ต่อ',
+    });
+    if (!res.isConfirmed) return;
+    catOrderDirty = false;
+  }
+  if (currentAction === 'edit') resetToAddMode();
+  showAdminMainMenu();
+}
 
 function openEditMode(idx) {
   const item = catalogs.find(it => it._idx === idx);
   if (!item) return;
   currentAction = 'edit';
-  document.getElementById('modalTitle').innerHTML = '<i class="fas fa-pen"></i> แก้ไขสินค้า';
   document.getElementById('editOldTitle').value = item.title;
   document.getElementById('inputTitle').value = item.title;
   document.getElementById('inputLink').value = item.link;
@@ -540,12 +793,13 @@ function openEditMode(idx) {
   updateLinkPreview();
   document.getElementById('resetBtn').classList.remove('hidden');
   openAdminModal();
+  openAdminSection('product');
+  document.getElementById('modalTitle').innerHTML = '<i class="fas fa-pen"></i> แก้ไขสินค้า';
 }
 
 function resetToAddMode() {
   currentAction = 'add';
   currentFileType = 'pdf';
-  document.getElementById('modalTitle').innerHTML = '<i class="fas fa-toolbox"></i> จัดการระบบ';
   document.getElementById('inputTitle').value = '';
   document.getElementById('inputLink').value = '';
   document.getElementById('editOldTitle').value = '';
@@ -553,12 +807,11 @@ function resetToAddMode() {
   setActiveTypePill('pdf');
   document.getElementById('autoDetectChip').classList.add('hidden');
   document.getElementById('linkPreview').classList.add('hidden');
-  document.getElementById('catCollapseBody').classList.add('hidden');
-  document.getElementById('catCollapseArrow').textContent = '▾';
-  const slideBody = document.getElementById('slideCollapseBody');
-  const slideArrow = document.getElementById('slideCollapseArrow');
-  if (slideBody) slideBody.classList.add('hidden');
-  if (slideArrow) slideArrow.textContent = '▾';
+  // ถ้ากำลังอยู่ในหน้าจัดการสินค้าอยู่แล้ว (เช่น กด "ยกเลิกแก้ไข") ให้อัปเดตหัวข้อกลับเป็นโหมดเพิ่มใหม่ด้วย
+  const productSection = document.getElementById('adminSection-product');
+  if (productSection && !productSection.classList.contains('hidden')) {
+    document.getElementById('modalTitle').innerHTML = '<i class="fas fa-box"></i> จัดการสินค้า';
+  }
 }
 
 // ============================================================
@@ -738,15 +991,6 @@ function closeBrochureOverlay() {
 }
 
 // --- Admin: จัดการสไลด์หน้าแรก ---
-function toggleSlideCollapse() {
-  const body = document.getElementById('slideCollapseBody');
-  const arrow = document.getElementById('slideCollapseArrow');
-  const willOpen = body.classList.contains('hidden');
-  body.classList.toggle('hidden');
-  arrow.textContent = willOpen ? '▴' : '▾';
-  if (willOpen) renderAdminSlideList();
-}
-
 function renderAdminSlideList() {
   const list = document.getElementById('slideAdminList');
   if (!list) return;
@@ -848,6 +1092,225 @@ function showWebQR() {
   document.getElementById('qrTitle').innerText = 'QR Code สำหรับเข้าเว็บไซต์';
   document.getElementById('qrImg').src = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(window.location.href)}`;
   openQrOverlay();
+}
+
+// ============================================================
+// ปุ่มติดต่อด่วนลอย (FAB) — โทรหา นพดล/กานต์/เจษฎา ได้ทันที
+// ชื่อ/ตำแหน่ง/เบอร์ แก้ไขได้จากหน้าแอดมิน (เก็บไว้ที่ backend ผ่าน action getContacts/updateContacts)
+// ============================================================
+function loadContacts() {
+  fetch(APPS_SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'getContacts' }) })
+    .then(res => res.json())
+    .then(result => {
+      if (result.success && Array.isArray(result.contacts) && result.contacts.length) {
+        contacts = result.contacts;
+        try { localStorage.setItem(CACHE_KEY_CONTACTS, JSON.stringify(contacts)); } catch (e) { /* ไม่เป็นไร */ }
+        renderContactFab();
+        renderAdminContactForm();
+      }
+    })
+    .catch(() => { /* เน็ตมีปัญหา — ใช้ค่าจากแคช/ค่าเริ่มต้นที่มีอยู่แล้วเงียบๆ */ });
+}
+
+function renderContactFab() {
+  const list = document.getElementById('contactSheetList');
+  if (!list) return;
+  const hasAny = contacts.some(c => c.name || c.phone);
+  const fab = document.getElementById('contactFab');
+  if (fab) fab.classList.toggle('hidden', !hasAny);
+  list.innerHTML = contacts.map(c => {
+    if (!c.name && !c.phone) return '';
+    const initial = escapeHtml((c.name || '?').trim().slice(0, 1));
+    return `
+      <div class="contact-row">
+        <div class="contact-avatar">${initial}</div>
+        <div class="contact-meta">
+          <div class="contact-name">${escapeHtml(c.name || '')}</div>
+          <div class="contact-role">${escapeHtml(c.role || '')}</div>
+        </div>
+        <div class="contact-actions">
+          ${c.phone ? `<a class="contact-call-btn" href="tel:${escapeAttr(c.phone)}"><i class="fas fa-phone"></i> ${escapeHtml(c.phone)}</a>` : `<span class="contact-no-phone">ยังไม่ระบุเบอร์</span>`}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function toggleContactSheet() {
+  const sheet = document.getElementById('contactSheet');
+  if (!sheet) return;
+  sheet.classList.toggle('hidden');
+}
+
+function closeContactSheet() {
+  const sheet = document.getElementById('contactSheet');
+  if (sheet) sheet.classList.add('hidden');
+}
+
+// --- Admin: แก้ไขชื่อ/ตำแหน่ง/เบอร์ผู้ติดต่อด่วน ---
+function renderAdminContactForm() {
+  const wrap = document.getElementById('contactAdminForm');
+  if (!wrap) return;
+  const rows = [0, 1, 2].map(i => {
+    const c = contacts[i] || { name: '', role: '', phone: '' };
+    return `
+      <div class="contact-admin-row">
+        <input type="text" id="contactName${i}" placeholder="ชื่อ" value="${escapeAttr(c.name || '')}">
+        <input type="text" id="contactRole${i}" placeholder="ตำแหน่ง" value="${escapeAttr(c.role || '')}">
+        <input type="tel" id="contactPhone${i}" placeholder="เบอร์โทร" value="${escapeAttr(c.phone || '')}">
+      </div>`;
+  }).join('');
+  wrap.innerHTML = rows;
+}
+
+async function handleSaveContacts() {
+  const newContacts = [0, 1, 2].map(i => ({
+    name: (document.getElementById(`contactName${i}`).value || '').trim(),
+    role: (document.getElementById(`contactRole${i}`).value || '').trim(),
+    phone: (document.getElementById(`contactPhone${i}`).value || '').trim(),
+  }));
+  const ok = await sendToCloud(
+    { action: 'updateContacts', contacts: newContacts },
+    { closeModalOnSuccess: false, onSuccess: () => { contacts = newContacts; try { localStorage.setItem(CACHE_KEY_CONTACTS, JSON.stringify(contacts)); } catch (e) {} renderContactFab(); } }
+  );
+  if (ok) { contacts = newContacts; renderContactFab(); }
+}
+
+// ============================================================
+// หน้าสรุปสำหรับแอดมิน — จำนวนสินค้า/หมวดหมู่/ยอดแชร์ + สินค้ายอดนิยม 5 อันดับ
+// (เปิดหน้านี้ผ่านเมนูหลักของ "จัดการระบบ" — ดู openAdminSection('stats'))
+// ============================================================
+
+async function loadStats() {
+  const wrap = document.getElementById('statsContent');
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="stats-loading">กำลังโหลดข้อมูลสรุป...</div>`;
+  try {
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'getStats', token: adminToken }),
+    });
+    const result = await response.json();
+    if (!result.success) {
+      wrap.innerHTML = `<div class="stats-loading">โหลดข้อมูลสรุปไม่สำเร็จ: ${escapeHtml(result.message || '')}</div>`;
+      return;
+    }
+    renderStats(result.stats);
+  } catch (e) {
+    wrap.innerHTML = `<div class="stats-loading">เกิดข้อผิดพลาดในการเชื่อมต่อ</div>`;
+  }
+}
+
+function renderStats(stats) {
+  const wrap = document.getElementById('statsContent');
+  if (!wrap) return;
+  const top = stats.topSharedProducts || [];
+  const maxCount = top.reduce((m, t) => Math.max(m, t.count), 0) || 1;
+
+  const tilesHtml = `
+    <div class="stats-tiles">
+      <div class="stats-tile"><div class="stats-tile-num">${stats.totalProducts}</div><div class="stats-tile-label">สินค้าทั้งหมด</div></div>
+      <div class="stats-tile"><div class="stats-tile-num">${stats.totalCategories}</div><div class="stats-tile-label">หมวดหมู่</div></div>
+      <div class="stats-tile"><div class="stats-tile-num">${stats.totalShares}</div><div class="stats-tile-label">ยอดแชร์รวม</div></div>
+      <div class="stats-tile"><div class="stats-tile-num">${escapeHtml(stats.popularCategory || '-')}</div><div class="stats-tile-label">หมวดยอดนิยม</div></div>
+    </div>`;
+
+  const barsHtml = top.length ? `
+    <div class="stats-bars">
+      <div class="stats-bars-title">สินค้าที่ถูกแชร์มากที่สุด (Top 5)</div>
+      ${top.map(t => `
+        <div class="stats-bar-row">
+          <div class="stats-bar-label" title="${escapeAttr(t.title)}">${escapeHtml(t.title)}</div>
+          <div class="stats-bar-track"><div class="stats-bar-fill" style="width:${Math.max(6, (t.count / maxCount) * 100)}%"></div></div>
+          <div class="stats-bar-count">${t.count}</div>
+        </div>`).join('')}
+    </div>` : `<div class="stats-loading">ยังไม่มีข้อมูลการแชร์</div>`;
+
+  wrap.innerHTML = tilesHtml + barsHtml;
+}
+
+// ============================================================
+// ปุ่ม "เพิ่มลงหน้าจอหลัก" (Add to Home Screen)
+// ============================================================
+let deferredInstallPrompt = null;
+
+function initInstallBanner() {
+  let dismissed = false;
+  try { dismissed = localStorage.getItem(CACHE_KEY_INSTALL_DISMISSED) === '1'; } catch (e) {}
+
+  // ถ้าเปิดแอปแบบติดตั้งแล้ว (standalone) ไม่ต้องโชว์แบนเนอร์เลย
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (isStandalone) return;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (!dismissed) showInstallBanner(false);
+  });
+
+  window.addEventListener('appinstalled', () => {
+    hideInstallBanner();
+    try { localStorage.setItem(CACHE_KEY_INSTALL_DISMISSED, '1'); } catch (e) {}
+  });
+
+  // iOS Safari ไม่รองรับ beforeinstallprompt — ถ้าเป็น iOS Safari (ไม่ใช่แอปที่ติดตั้งแล้ว) โชว์คำแนะนำแทน
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  if (!dismissed && isIos && isSafari) {
+    showInstallBanner(true);
+  }
+}
+
+function showInstallBanner(isIosInstructions) {
+  const banner = document.getElementById('installBanner');
+  if (!banner) return;
+  document.getElementById('installBannerText').textContent = isIosInstructions
+    ? 'เพิ่ม Catalog Hub ลงหน้าจอหลัก: กดปุ่มแชร์ แล้วเลือก "เพิ่มลงในหน้าจอโฮม"'
+    : 'ติดตั้ง Catalog Hub ไว้ที่หน้าจอหลัก เปิดใช้งานได้ไวขึ้นเหมือนแอปทั่วไป';
+  document.getElementById('installBannerBtn').classList.toggle('hidden', isIosInstructions);
+  banner.classList.remove('hidden');
+}
+
+function hideInstallBanner() {
+  const banner = document.getElementById('installBanner');
+  if (banner) banner.classList.add('hidden');
+}
+
+function dismissInstallBanner() {
+  hideInstallBanner();
+  try { localStorage.setItem(CACHE_KEY_INSTALL_DISMISSED, '1'); } catch (e) {}
+}
+
+async function handleInstallClick() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const choice = await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  hideInstallBanner();
+  if (choice.outcome === 'accepted') {
+    try { localStorage.setItem(CACHE_KEY_INSTALL_DISMISSED, '1'); } catch (e) {}
+  }
+}
+
+// ============================================================
+// โหมดสว่าง (Light mode) — สลับเฉพาะโทนสี "เนื้อหา" (พื้นหลัง/การ์ดสินค้า/แท็บ)
+// ส่วน header/modal/overlay/แถบเลือกสินค้า ยังคงเป็นธีมเข้มของแบรนด์เหมือนเดิมทั้งสองโหมด
+// ============================================================
+function initTheme() {
+  let theme = 'dark';
+  try { theme = localStorage.getItem(CACHE_KEY_THEME) || 'dark'; } catch (e) {}
+  applyTheme(theme);
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const icon = document.getElementById('themeToggleIcon');
+  if (icon) icon.className = theme === 'light' ? 'fas fa-moon' : 'fas fa-sun';
+  try { localStorage.setItem(CACHE_KEY_THEME, theme); } catch (e) {}
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  applyTheme(current === 'light' ? 'dark' : 'light');
 }
 
 init();
