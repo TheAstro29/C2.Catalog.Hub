@@ -565,8 +565,9 @@ function resetToAddMode() {
 // สไลด์หน้าแรก (Hero Slider) — หมุนอัตโนมัติ กดรูปแล้วเปิดโบรชัวร์ที่ผูกไว้
 // ทั้งรูปสไลด์และลิงก์ที่จะเปิดเป็นลิงก์ Google Drive ล้วนๆ ที่ admin วางเอง ไม่มีการอัปโหลดไฟล์
 // ============================================================
-let heroAutoplayTimer = null;
 let heroCurrentSlide = 0;
+let heroCarouselInstance = null; // instance ของ Bootstrap Carousel — สร้างใหม่ทุกครั้งที่ renderHeroSlider()
+let heroCarouselEventsBound = false; // event listener ของ #heroCarousel ผูกแค่ครั้งเดียว (element ตัวนี้ไม่ถูกสร้างใหม่ ถูก re-render แค่ลูกข้างใน)
 
 /** ดึงรูปสไลด์จาก Sheet แท็บ "slides" — ถ้ายังไม่ได้ตั้งค่า gid (REPLACE_WITH_SLIDES_GID) หรือดึงไม่สำเร็จ
  * ให้ซ่อนสไลด์ไว้เงียบๆ ไม่ error ผู้ใช้ทั่วไปจะไม่เห็นสไลด์เลยจนกว่า admin จะตั้งค่า Sheet เสร็จ */
@@ -577,7 +578,7 @@ function loadSlides() {
     download: true, header: true, skipEmptyLines: true,
     complete: (res) => {
       const fresh = res.data
-        .filter(row => row.imageUrl && row.linkUrl) // ปิดฟีเจอร์ "ใส่แค่รูปอย่างเดียว" ไว้ก่อนชั่วคราว — ต้องมีทั้งรูปและลิงก์ไฟล์
+        .filter(row => row.imageUrl) // ลิงก์ไฟล์ที่จะเปิด (linkUrl) ไม่บังคับ — ถ้าไม่ใส่ กดแล้วจะขยายดูรูปเฉยๆ แทนการเปิดโบรชัวร์
         .map(row => ({ imageUrl: row.imageUrl.trim(), linkUrl: (row.linkUrl || '').trim() }));
       slides = fresh;
       try { localStorage.setItem(CACHE_KEY_SLIDES, JSON.stringify(slides)); } catch (e) { /* เต็ม/ปิดใช้งาน ไม่เป็นไร */ }
@@ -599,13 +600,17 @@ function driveImageUrl(link, size) {
   return fileId ? `https://lh3.googleusercontent.com/d/${fileId[0]}=${size || 'w1000'}` : localPlaceholder('C2TECH');
 }
 
+/** สไลด์หน้าแรก — ใช้ Bootstrap Carousel (bootstrap.bundle.min.js) เป็นตัวคุมกลไกเลื่อน/หมุนอัตโนมัติ/ปัดนิ้ว
+ * ทั้งหมด (ไลบรารีสำเร็จรูปที่ผ่านการทดสอบมาดีแล้ว) แทนโค้ด carousel ที่เขียนเอง — ยังคงใช้วิธีโหลดรูปทีละรูป
+ * แบบหน่วงเวลา + ลองใหม่อัตโนมัติ (loadHeroImage) เหมือนเดิม เผื่อกรณี Google จำกัดคำขอรูปพร้อมกันชั่วคราว */
 function renderHeroSlider() {
   const wrap = document.getElementById('heroSlider');
   const track = document.getElementById('heroTrack');
   const dots = document.getElementById('heroDots');
-  if (!wrap || !track || !dots) return;
+  const carouselEl = document.getElementById('heroCarousel');
+  if (!wrap || !track || !dots || !carouselEl) return;
 
-  stopHeroAutoplay();
+  if (heroCarouselInstance) { heroCarouselInstance.dispose(); heroCarouselInstance = null; }
 
   if (!slides.length) {
     wrap.classList.add('hidden');
@@ -617,34 +622,53 @@ function renderHeroSlider() {
   heroCurrentSlide = Math.min(heroCurrentSlide, slides.length - 1);
 
   // หมายเหตุสำคัญ: ห้ามใส่ loading="lazy" ให้รูปสไลด์พวกนี้ — สไลด์ที่ 2 เป็นต้นไปถูกจัดวางไว้นอกขอบเขตที่มองเห็นจริง
-  // ของเบราว์เซอร์ตั้งแต่แรก (ใช้ CSS transform เลื่อนเข้ามาโชว์ทีหลัง ไม่ใช่การสกอลหน้าจอจริง) ทำให้ตัวตรวจจับ
-  // lazy-load ของเบราว์เซอร์คิดว่ารูปยัง "อยู่ไกลจากจอ" และไม่ยอมโหลดให้เลยตลอดไป
+  // ของเบราว์เซอร์ตั้งแต่แรก ทำให้ตัวตรวจจับ lazy-load ของเบราว์เซอร์คิดว่ารูปยัง "อยู่ไกลจากจอ" และไม่ยอมโหลดให้
   //
-  // อีกจุดหนึ่งที่พบว่าเป็นสาเหตุจริงของ "สไลด์ 2-3 ไม่ขึ้น": ถ้าตั้ง src ให้ทุกรูปพร้อมกันทีเดียวตอน render
-  // เบราว์เซอร์จะยิง request ไปโหลดรูปจาก Google หลายรูปพร้อมกันในจังหวะเดียว (burst) ซึ่ง Google มักจะจำกัด/ปฏิเสธ
-  // คำขอรูปพร้อมกันจำนวนมากจาก client เดียวกันแบบนี้ (rate-limit ชั่วคราว) ทำให้รูปแรกขึ้นแต่รูปถัดไปโหลดไม่สำเร็จ
-  // จึงเปลี่ยนมาใส่ URL ไว้ใน data-src ก่อน แล้วค่อยตั้ง src จริงให้ทีละรูปแบบหน่วงเวลาห่างกันเล็กน้อย (ไม่พร้อมกัน)
-  // พร้อมลองใหม่อัตโนมัติถ้าโหลดไม่สำเร็จในครั้งแรก ก่อนจะ fallback ไปใช้รูป placeholder จริงๆ
-  track.innerHTML = slides.map((s, i) => `
-    <div class="hero-slide" onclick="openBrochure(${i})">
+  // อีกจุดที่พบว่าเป็นสาเหตุจริงของ "สไลด์ 2-3 ไม่ขึ้น": ถ้าตั้ง src ให้ทุกรูปพร้อมกันทีเดียวตอน render เบราว์เซอร์
+  // จะยิง request ไปโหลดรูปจาก Google หลายรูปพร้อมกันในจังหวะเดียว (burst) ซึ่ง Google มักจะจำกัด/ปฏิเสธคำขอรูป
+  // พร้อมกันจำนวนมากจาก client เดียวกันแบบนี้ (rate-limit ชั่วคราว) จึงเปลี่ยนมาใส่ URL ไว้ใน data-src ก่อน แล้วค่อย
+  // ตั้ง src จริงให้ทีละรูปแบบหน่วงเวลาห่างกันเล็กน้อย พร้อมลองใหม่อัตโนมัติถ้าโหลดไม่สำเร็จในครั้งแรก
+  track.innerHTML = slides.map((s, i) => {
+    const hintText = s.linkUrl ? 'แตะเพื่อดูรายละเอียด' : 'แตะเพื่อดูภาพขยาย';
+    return `
+    <div class="carousel-item ${i === heroCurrentSlide ? 'active' : ''}" onclick="openBrochure(${i})">
       <img data-src="${escapeAttr(driveImageUrl(s.imageUrl))}" alt="สไลด์ ${i + 1}">
-      <span class="hero-hint"><i class="fas fa-hand-pointer"></i> แตะเพื่อดูรายละเอียด</span>
-    </div>`).join('');
+      <span class="hero-hint"><i class="fas fa-hand-pointer"></i> ${hintText}</span>
+    </div>`;
+  }).join('');
 
   Array.from(track.querySelectorAll('img[data-src]')).forEach((img, i) => {
     setTimeout(() => loadHeroImage(img), i * 350);
   });
 
-  dots.innerHTML = slides.map((_, i) =>
-    `<button class="hero-dot ${i === heroCurrentSlide ? 'active' : ''}" onclick="goToSlide(${i})" aria-label="สไลด์ที่ ${i + 1}"></button>`
-  ).join('');
+  // ปุ่มจุดบอกตำแหน่ง — ผูกกับ Bootstrap ผ่าน data-bs-target/data-bs-slide-to (ไม่ต้องอยู่ใน #heroCarousel ก็ได้
+  // เพราะ Bootstrap ดักฟัง click แบบ delegate จากทั้งเอกสาร แล้วค่อยหา carousel เป้าหมายจาก data-bs-target)
+  dots.innerHTML = slides.map((_, i) => `
+    <button type="button" class="hero-dot ${i === heroCurrentSlide ? 'active' : ''}"
+            data-bs-target="#heroCarousel" data-bs-slide-to="${i}"
+            aria-label="สไลด์ที่ ${i + 1}" onclick="event.stopPropagation()"></button>`).join('');
 
   const progressWrap = document.getElementById('heroProgressFill');
   if (progressWrap) progressWrap.parentElement.classList.toggle('hidden', slides.length <= 1);
 
-  applyHeroTransform();
-  setupHeroSwipe();
-  if (slides.length > 1) startHeroAutoplay();
+  heroCarouselInstance = new bootstrap.Carousel(carouselEl, {
+    interval: slides.length > 1 ? 4500 : false,
+    ride: slides.length > 1 ? 'carousel' : false,
+    touch: true,
+    wrap: true,
+  });
+
+  // ผูก event แค่ครั้งเดียวตลอดอายุเพจ เพราะ #heroCarousel ไม่ได้ถูกสร้าง element ใหม่ทุกครั้งที่ renderHeroSlider()
+  // (แค่ dispose+สร้าง instance ใหม่ทับ) ผูกซ้ำทุกรอบจะกลายเป็น listener ซ้อนกันเรื่อยๆ
+  if (!heroCarouselEventsBound) {
+    heroCarouselEventsBound = true;
+    carouselEl.addEventListener('slide.bs.carousel', () => playHeroProgress());
+    carouselEl.addEventListener('slid.bs.carousel', (e) => {
+      heroCurrentSlide = e.to;
+      document.querySelectorAll('#heroDots .hero-dot').forEach((d, i) => d.classList.toggle('active', i === e.to));
+    });
+  }
+  if (slides.length > 1) playHeroProgress(); else resetHeroProgress();
 }
 
 /** โหลดรูปสไลด์ทีละรูป — ถ้าโหลดไม่สำเร็จ (มักเกิดจาก Google จำกัดคำขอรูปพร้อมกันชั่วคราว) จะลองใหม่อัตโนมัติ
@@ -664,20 +688,7 @@ function loadHeroImage(img, attempt) {
   img.src = url;
 }
 
-function applyHeroTransform() {
-  const track = document.getElementById('heroTrack');
-  if (!track) return;
-  track.style.transform = `translateX(-${heroCurrentSlide * 100}%)`;
-  document.querySelectorAll('#heroDots .hero-dot').forEach((d, i) => d.classList.toggle('active', i === heroCurrentSlide));
-}
-
-function goToSlide(i) {
-  heroCurrentSlide = ((i % slides.length) + slides.length) % slides.length;
-  applyHeroTransform();
-  restartHeroAutoplay();
-}
-
-/** แถบนับเวลาสไลด์อัตโนมัติ — วิ่งเต็มความกว้างใน 1 รอบ (4.5 วิ) แล้วรีเซ็ตใหม่ทุกครั้งที่เปลี่ยนสไลด์ */
+/** แถบนับเวลาสไลด์อัตโนมัติ — วิ่งเต็มความกว้างใน 1 รอบ (4.5 วิ) แล้วรีเซ็ตใหม่ทุกครั้งที่ Bootstrap เปลี่ยนสไลด์ */
 function resetHeroProgress() {
   const fill = document.getElementById('heroProgressFill');
   if (!fill) return;
@@ -693,68 +704,26 @@ function playHeroProgress() {
   requestAnimationFrame(() => { fill.classList.add('animate'); });
 }
 
-function startHeroAutoplay() {
-  stopHeroAutoplay();
-  playHeroProgress();
-  heroAutoplayTimer = setInterval(() => { goToSlide(heroCurrentSlide + 1); }, 4500);
-}
+/** เรียกตอนเปิด overlay อื่น (โบรชัวร์/พรีวิวรูป) ทับหน้าสไลด์ — สั่งหยุดหมุนอัตโนมัติชั่วคราว */
 function stopHeroAutoplay() {
-  if (heroAutoplayTimer) { clearInterval(heroAutoplayTimer); heroAutoplayTimer = null; }
+  if (heroCarouselInstance) heroCarouselInstance.pause();
   resetHeroProgress();
 }
+/** เรียกตอนปิด overlay แล้ว — สั่งให้สไลด์หมุนอัตโนมัติต่อ (ถ้ามีมากกว่า 1 สไลด์) */
 function restartHeroAutoplay() {
-  if (slides.length > 1) startHeroAutoplay(); else stopHeroAutoplay();
-}
-
-/** รองรับปัดนิ้วซ้าย-ขวาเพื่อเปลี่ยนสไลด์บนมือถือ — bind แค่ครั้งเดียวเพราะ #heroTrack เป็น element เดิม
- * ที่ถูก re-render แค่ innerHTML ข้างในเท่านั้น (ตัว element เองไม่ได้ถูกสร้างใหม่) */
-let heroSwipeBound = false;
-function setupHeroSwipe() {
-  if (heroSwipeBound) return;
-  const track = document.getElementById('heroTrack');
-  if (!track) return;
-  heroSwipeBound = true;
-
-  let startX = 0, startY = 0, dx = 0, dy = 0, dragging = false;
-
-  track.addEventListener('touchstart', (e) => {
-    if (slides.length < 2) return;
-    dragging = true;
-    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
-    dx = 0; dy = 0;
-    track.style.transition = 'none';
-    stopHeroAutoplay();
-  }, { passive: true });
-
-  track.addEventListener('touchmove', (e) => {
-    if (!dragging) return;
-    dx = e.touches[0].clientX - startX;
-    dy = e.touches[0].clientY - startY;
-    if (Math.abs(dx) > Math.abs(dy)) {
-      const percent = (dx / track.clientWidth) * 100;
-      track.style.transform = `translateX(calc(-${heroCurrentSlide * 100}% + ${percent}%))`;
-    }
-  }, { passive: true });
-
-  track.addEventListener('touchend', () => {
-    if (!dragging) return;
-    dragging = false;
-    track.style.transition = '';
-    const swipedHorizontally = Math.abs(dx) > Math.abs(dy);
-    const passedThreshold = Math.abs(dx) > track.clientWidth * 0.15;
-    if (swipedHorizontally && passedThreshold) {
-      goToSlide(heroCurrentSlide + (dx < 0 ? 1 : -1));
-    } else {
-      applyHeroTransform();
-      restartHeroAutoplay();
-    }
-  });
+  if (heroCarouselInstance && slides.length > 1) heroCarouselInstance.cycle();
 }
 
 /** กดที่สไลด์แล้วเปิดหน้าต่างโบรชัวร์ — แสดงรูปปกของสไลด์นั้น แล้วมีปุ่มลิงก์ไปเปิดไฟล์ที่ผูกไว้ */
 function openBrochure(i) {
   const slide = slides[i];
   if (!slide) return;
+  // สไลด์ที่ไม่ได้ผูกลิงก์ไฟล์ไว้ (แค่ใส่รูปโชว์เฉยๆ) — กดแล้วขยายดูรูปแบบเต็มจอแทน ไม่ต้องเปิดหน้าต่างโบรชัวร์
+  if (!slide.linkUrl) {
+    stopHeroAutoplay();
+    previewImage(driveImageUrl(slide.imageUrl));
+    return;
+  }
   document.getElementById('brochureCoverImg').innerHTML =
     `<img src="${escapeAttr(driveImageUrl(slide.imageUrl))}" alt="" onerror="this.src='${localPlaceholder('C2TECH')}'">`;
   document.getElementById('brochureTitle').textContent = 'เปิดโบรชัวร์';
@@ -790,7 +759,7 @@ function renderAdminSlideList() {
       <div class="slide-admin-thumb"><img src="${escapeAttr(driveImageUrl(s.imageUrl, 'w200'))}" alt="" onerror="this.src='${localPlaceholder('C2TECH')}'"></div>
       <div class="slide-admin-text">
         <div><i class="fas fa-image"></i> ${escapeHtml(truncateMiddle(s.imageUrl))}</div>
-        <div><i class="fas fa-link"></i> ${escapeHtml(truncateMiddle(s.linkUrl))}</div>
+        <div>${s.linkUrl ? `<i class="fas fa-link"></i> ${escapeHtml(truncateMiddle(s.linkUrl))}` : `<i class="fas fa-image-slash"></i> แสดงภาพอย่างเดียว (ไม่มีลิงก์)`}</div>
       </div>
       <div class="slide-admin-actions">
         <button class="icon-sq-btn danger" onclick="handleDeleteSlide(${i})" title="ลบสไลด์นี้"><i class="fas fa-trash"></i></button>
@@ -808,8 +777,9 @@ function truncateMiddle(str, max) {
 
 async function handleAddSlide() {
   const imageUrl = document.getElementById('newSlideImgInput').value.trim();
+  // ลิงก์ไฟล์ที่จะเปิด (linkUrl) ไม่บังคับ — เว้นว่างไว้ได้ถ้าต้องการแค่โชว์ภาพเฉยๆ ไม่ต้องมีไฟล์ให้กดเปิด
   const linkUrl = document.getElementById('newSlideLinkInput').value.trim();
-  if (!imageUrl || !linkUrl) return Swal.fire({ title: 'กรุณาวางลิงก์รูปภาพและลิงก์ไฟล์ให้ครบ', icon: 'warning' });
+  if (!imageUrl) return Swal.fire({ title: 'กรุณาวางลิงก์รูปภาพ', icon: 'warning' });
 
   const ok = await sendToCloud(
     { action: 'addSlide', imageUrl, linkUrl },

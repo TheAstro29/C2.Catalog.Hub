@@ -98,28 +98,39 @@ img { -webkit-user-drag: none; }
 }
 .tab-pill.active { background: var(--mint); color: #08150f; border-color: var(--mint); font-weight: 700; }
 
+/* ---------- กติกา CSS ขั้นต่ำที่ Bootstrap Carousel (bootstrap.bundle.min.js) ต้องพึ่งเพื่อให้กลไกเลื่อนสไลด์
+   ทำงานได้ — คัดมาเฉพาะส่วนนี้จาก bootstrap.css แทนการโหลดทั้งไฟล์ เพื่อไม่ให้ไปทับดีไซน์ธีมเข้มของทั้งเว็บ
+   (ปุ่ม/ฟอนต์/สีลิงก์ ฯลฯ) คลาสพวกนี้ (.carousel-item, .carousel-item-next ฯลฯ) ตัว JS เป็นคนเติม/ลบให้เองอัตโนมัติ
+   ตอนเปลี่ยนสไลด์ ห้ามลบทิ้งแม้จะดูเหมือนไม่ได้ใช้ตรงๆ ในโค้ด HTML/JS ของเรา */
+.carousel { position: relative; }
+.carousel.pointer-event { touch-action: pan-y; }
+.carousel-inner { position: relative; width: 100%; overflow: hidden; }
+.carousel-inner::after { display: block; clear: both; content: ""; }
+.carousel-item {
+  position: relative; display: none; float: left; width: 100%; margin-right: -100%;
+  backface-visibility: hidden; transition: transform .6s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) { .carousel-item { transition: none; } }
+.carousel-item.active, .carousel-item-next, .carousel-item-prev { display: block; }
+.carousel-item-next:not(.carousel-item-start), .active.carousel-item-end { transform: translateX(100%); }
+.carousel-item-prev:not(.carousel-item-end), .active.carousel-item-start { transform: translateX(-100%); }
+
 /* ---------- Hero slider (ไม่ sticky — เลื่อนหายไปพร้อมเนื้อหาปกติ) ----------
-   หมายเหตุ: .hero-track เลื่อนสไลด์ด้วย transform: translateX(...) ที่ควบคุมจาก
-   script.js (applyHeroTransform) — สไลด์แต่ละอันจึงต้องเรียงตัวกัน "ในแนวนอน"
-   ด้วย display:flex (ไม่ใช่ position:absolute ซ้อนทับกันแบบเดิม ไม่งั้นรูปจะไม่ขึ้นเลย) */
+   หมายเหตุ: เปลี่ยนมาใช้ Bootstrap Carousel (bootstrap.bundle.min.js) เป็นตัวจัดการเลื่อนสไลด์/หมุนอัตโนมัติ/
+   ปัดนิ้วให้ทั้งหมด (ไลบรารีสำเร็จรูปที่ผ่านการทดสอบมาดีแล้ว) แทนโค้ด carousel ที่เขียนเอง — ส่วนนี้เป็นแค่การ
+   ปรับหน้าตา (สี/ขนาด/มุมโค้ง) ให้เข้ากับธีมเข้มของแอป ตัว track/item ปล่อยให้ Bootstrap คุมกลไกเอง */
 .hero-slider {
   max-width: 1000px; margin: 14px auto 4px; padding: 0 16px;
 }
-.hero-track {
-  position: relative; display: flex; height: 190px; border-radius: 18px; overflow: hidden;
+#heroCarousel .carousel-inner {
+  height: 190px; border-radius: 18px; overflow: hidden;
   border: 1px solid var(--glass-border); background: var(--glass);
-  transition: transform .5s ease;
-  touch-action: pan-y; /* ปล่อยให้เลื่อนหน้าจอแนวตั้งได้ตามปกติ ส่วนแนวนอนจัดการเองด้วย JS (ปัดเปลี่ยนสไลด์) */
-  user-select: none;
 }
-.hero-slide {
-  position: relative; flex: 0 0 100%; width: 100%; height: 100%;
-  cursor: pointer; overflow: hidden;
-}
-.hero-slide img {
+#heroCarousel .carousel-item { height: 100%; cursor: pointer; }
+#heroCarousel .carousel-item img {
   width: 100%; height: 100%; object-fit: cover; display: block; -webkit-user-drag: none;
 }
-.hero-slide::after {
+#heroCarousel .carousel-item::after {
   content: ''; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(0,0,0,.5), rgba(0,0,0,0) 60%); pointer-events: none;
 }
 /* ป้ายบอกใบ้ว่ากดดูได้ — ลอยอยู่มุมล่างซ้ายของทุกสไลด์ */
@@ -133,11 +144,12 @@ img { -webkit-user-drag: none; }
   pointer-events: none;
 }
 .hero-hint i { color: var(--mint); font-size: 11px; }
-/* แถบนับเวลาสไลด์อัตโนมัติ — วิ่งเต็มความกว้างใน 1 รอบของ autoplay แล้วรีเซ็ตทุกครั้งที่เปลี่ยนสไลด์ */
+/* แถบนับเวลาสไลด์อัตโนมัติ — วิ่งเต็มความกว้างใน 1 รอบของ autoplay แล้วรีเซ็ตทุกครั้งที่ Bootstrap เปลี่ยนสไลด์ */
 .hero-progress { height: 3px; border-radius: 3px; background: var(--glass-border); margin-top: 10px; overflow: hidden; }
 .hero-progress-fill { height: 100%; width: 0%; background: var(--mint); border-radius: 3px; }
 .hero-progress-fill.animate { transition: width 4.5s linear; width: 100%; }
-.hero-dots { display: flex; justify-content: center; gap: 5px; margin-top: 9px; }
+/* จุดบอกตำแหน่งสไลด์ — ปุ่มพวกนี้ผูกกับ Bootstrap ผ่าน data-bs-target/data-bs-slide-to (ไม่ต้องอยู่ใน #heroCarousel ก็ได้) */
+.hero-dots { display: flex; justify-content: center; gap: 5px; margin-top: 9px; padding: 0; list-style: none; }
 .hero-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--glass-border); cursor: pointer; transition: width .2s, background .2s; border: none; padding: 0; }
 .hero-dot.active { background: var(--mint); width: 16px; border-radius: 4px; }
 
@@ -358,12 +370,12 @@ img { -webkit-user-drag: none; }
   .hdr-title { font-size: 19px; }
   .card-img { height: 160px; }
   .card-title { font-size: 13.5px; }
-  .hero-track { height: 280px; }
+  #heroCarousel .carousel-inner { height: 280px; }
 }
 @media (min-width: 1024px) {
   .grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
   .hdr-title { font-size: 21px; }
-  .hero-track { height: 340px; }
+  #heroCarousel .carousel-inner { height: 340px; }
 }
 @media (min-width: 1400px) {
   .grid { grid-template-columns: repeat(5, minmax(0,1fr)); gap: 20px; }
@@ -371,7 +383,7 @@ img { -webkit-user-drag: none; }
   .hdr-title { font-size: 26px; }
   .search-box input { font-size: 16px; }
   .tab-pill { font-size: 14px; padding: 9px 20px; }
-  .hero-track { height: 400px; }
+  #heroCarousel .carousel-inner { height: 400px; }
 }
 @media (min-width: 1800px) {
   .grid { grid-template-columns: repeat(5, minmax(0,1fr)); gap: 26px; }
