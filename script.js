@@ -354,12 +354,26 @@ function localPlaceholder(label) {
   return 'data:image/svg+xml;base64,' + utf8Safe;
 }
 
+/** เรียงสินค้าตามลำดับหมวดหมู่ที่ admin ลากจัดไว้ (ใช้เฉพาะตอนอยู่แท็บ "ทั้งหมด" ไม่ว่าจะค้นหาอยู่ด้วยหรือไม่ก็ตาม)
+ * สินค้าที่ category ไม่ตรงกับหมวดใดใน categories เลย (เช่นหมวดถูกลบไปแล้วแต่สินค้ายังค้างชื่อเดิม) จะถูกจัดไว้ท้ายสุด
+ * ไม่ทำให้หายไปจากรายการ ใช้ _idx เป็นตัวรักษาลำดับเดิมภายในหมวดเดียวกัน (stable sort) */
+function sortByCategoryOrder(items) {
+  return items.slice().sort((a, b) => {
+    const ai = categories.indexOf(a.category); const bi = categories.indexOf(b.category);
+    const aRank = ai === -1 ? categories.length : ai;
+    const bRank = bi === -1 ? categories.length : bi;
+    if (aRank !== bRank) return aRank - bRank;
+    return a._idx - b._idx;
+  });
+}
+
 function renderCatalogs() {
   const list = document.getElementById('catalogList');
-  const filtered = catalogs.filter(item =>
+  let filtered = catalogs.filter(item =>
     (currentFilter === 'all' || item.category === currentFilter) &&
     (!currentSearch || item.title.toLowerCase().includes(currentSearch))
   );
+  if (currentFilter === 'all') filtered = sortByCategoryOrder(filtered);
 
   if (filtered.length === 0) {
     list.innerHTML = `<div class="empty-state">-- ไม่พบข้อมูลสินค้า --</div>`;
@@ -469,6 +483,14 @@ function shareSingleToLine(idx) {
   if (!item) return;
   openLineShare(`${item.title}\n${item.link}`);
   logShare_([item.title]);
+}
+
+/** แชร์ลิงก์เว็บแอปทั้งเว็บผ่าน LINE (สำหรับลูกค้าที่อยากดูสินค้าทั้งหมดเอง ต่างจาก shareSelectionToLine/shareSingleToLine
+ * ที่แชร์เฉพาะสินค้าที่เลือกไว้) — ใช้ URL ปัจจุบันของหน้าเว็บ (ตัด query string/hash ทิ้ง เอาแค่ลิงก์หลักของเว็บ) */
+function shareWebAppToLine() {
+  const url = window.location.origin + window.location.pathname;
+  openLineShare(`แคตตาล็อกสินค้า C2TECH — ดูสินค้าทั้งหมดได้ที่นี่:\n${url}`);
+  logShare_(['เว็บไซต์ทั้งหมด']);
 }
 
 /** บันทึกสถิติการแชร์ไปที่ backend (ใช้ในหน้าสรุปแอดมิน) — ยิงแบบ fire-and-forget ไม่ต้องรอผล/ไม่ต้อง token

@@ -18,7 +18,7 @@
        ทิ้งไป ส่วน CSS ไม่ได้โหลดทั้งไฟล์ของ Bootstrap มา (จะไปทับดีไซน์ธีมเข้มทั้งเว็บ) แต่คัดมาแค่กติกา CSS ที่ตัว
        Carousel JS ต้องพึ่งจริงๆ (คลาส .carousel-item / .carousel-item-next ฯลฯ) มาใส่ไว้ใน style.css แทน -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=26" />
+  <link rel="stylesheet" href="style.css?v=27" />
 </head>
 <body class="pb-tabbar">
 
@@ -36,6 +36,11 @@
     <button id="installBannerBtn" class="install-banner-btn" onclick="handleInstallClick()">ติดตั้ง</button>
     <button class="install-banner-close" onclick="dismissInstallBanner()">&times;</button>
   </div>
+
+  <!-- ปุ่มแชร์ลิงก์เว็บทั้งหมดผ่าน LINE — สำหรับลูกค้าที่อยากดูสินค้าทั้งหมดเอง (ลอยอยู่เหนือปุ่มติดต่อด่วน) -->
+  <button id="shareWebFab" class="share-web-fab no-print" onclick="shareWebAppToLine()" title="แชร์ลิงก์เว็บทั้งหมดผ่าน LINE">
+    <i class="fab fa-line"></i>
+  </button>
 
   <!-- ปุ่มติดต่อด่วนลอย — โทรหา นพดล/กานต์/เจษฎา ได้ทันที (แก้ไขชื่อ/ตำแหน่ง/เบอร์ได้จากหน้าแอดมิน) -->
   <button id="contactFab" class="contact-fab hidden no-print" onclick="toggleContactSheet()" title="ติดต่อด่วน">
@@ -251,6 +256,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=26"></script>
+  <script src="script.js?v=27"></script>
 </body>
 </html>

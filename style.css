@@ -454,6 +454,18 @@ img { -webkit-user-drag: none; }
 }
 .contact-fab:active { transform: scale(.94); }
 .selection-bar:not(.hidden) ~ .contact-fab { bottom: 148px; }
+
+/* ปุ่มลอยแชร์ลิงก์เว็บทั้งหมดผ่าน LINE — วางซ้อนอยู่เหนือปุ่มติดต่อด่วน (.contact-fab) เสมอ แสดงตลอดเวลา
+   ไม่ต้องรอโหลดข้อมูลใดๆ ก่อน (ต่างจาก .contact-fab ที่ซ่อนไว้จนกว่าจะรู้ว่ามีช่องทาง/ผู้ติดต่อให้แสดง)
+   ใช้สีเขียว LINE ตรงตามโลโก้จริง (ไม่ใช่สีมิ้นต์ของแบรนด์ ตั้งใจให้แยกจากปุ่มติดต่อด่วนชัดเจน) */
+.share-web-fab {
+  position: fixed; right: 16px; bottom: 146px; width: 52px; height: 52px; border-radius: 50%;
+  background: linear-gradient(135deg, #06C755, #04a344); color: #fff; border: none; font-size: 22px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 10px 24px rgba(0,0,0,.4); z-index: 34; cursor: pointer;
+}
+.share-web-fab:active { transform: scale(.94); }
+.selection-bar:not(.hidden) ~ .share-web-fab { bottom: 210px; }
 .contact-sheet {
   position: fixed; right: 16px; bottom: 148px; width: 260px; max-width: calc(100vw - 32px);
   background: rgba(8,21,15,.92); backdrop-filter: blur(14px); border: 1px solid var(--glass-border);
