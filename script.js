@@ -12,6 +12,7 @@ const CACHE_KEY_CATEGORIES = 'catalogHub_categories_v2';
 const CACHE_KEY_SLIDES = 'catalogHub_slides_v1';
 const CACHE_KEY_SYNC_TIME = 'catalogHub_lastSync_v2';
 const CACHE_KEY_CONTACTS = 'catalogHub_contacts_v1';
+const CACHE_KEY_CHANNELS = 'catalogHub_channels_v1';
 const CACHE_KEY_THEME = 'catalogHub_theme_v1';
 const CACHE_KEY_INSTALL_DISMISSED = 'catalogHub_installDismissed_v1';
 
@@ -23,6 +24,11 @@ let contacts = [
   { name: 'กานต์', role: 'COO', phone: '' },
   { name: 'เจษฎา', role: 'Marketing', phone: '' },
 ];
+// ช่องทางออนไลน์ของบริษัท (แยกจากรายชื่อพนักงาน) — แสดงเป็นปุ่มบนสุดของแผ่นติดต่อด่วน ถ้าเปิดใช้งานและมีลิงก์
+let channels = {
+  line: { enabled: false, label: 'แชทผ่าน LINE OA', url: '' },
+  facebook: { enabled: false, label: 'ข้อความผ่าน Facebook', url: '' },
+};
 let currentFilter = 'all';
 let currentSearch = '';
 let currentAction = 'add';
@@ -37,6 +43,7 @@ function init() {
   fetchData();
   loadSlides();
   loadContacts();
+  loadChannels();
   setupPullToRefresh();
   registerServiceWorker();
   initTheme();
@@ -65,6 +72,11 @@ function loadFromCache() {
     const cachedContacts = localStorage.getItem(CACHE_KEY_CONTACTS);
     if (cachedContacts) {
       contacts = JSON.parse(cachedContacts);
+      renderContactFab();
+    }
+    const cachedChannels = localStorage.getItem(CACHE_KEY_CHANNELS);
+    if (cachedChannels) {
+      channels = Object.assign({}, channels, JSON.parse(cachedChannels));
       renderContactFab();
     }
   } catch (e) { /* แคชเสีย ไม่เป็นไร ปล่อยให้ fetchData/loadSlides โหลดสดแทน */ }
@@ -715,6 +727,7 @@ const ADMIN_SECTION_META = {
   category: { title: 'จัดการหมวดหมู่', icon: 'fa-folder' },
   slides: { title: 'จัดการสไลด์หน้าแรก', icon: 'fa-images' },
   contacts: { title: 'ผู้ติดต่อด่วน', icon: 'fa-headset' },
+  channels: { title: 'ช่องทางออนไลน์', icon: 'fa-comments' },
   stats: { title: 'สรุปข้อมูล', icon: 'fa-chart-simple' },
   product: { title: 'จัดการสินค้า', icon: 'fa-box' },
 };
@@ -761,6 +774,7 @@ function openAdminSection(name) {
   if (name === 'category') renderAdminCatList();
   if (name === 'slides') renderAdminSlideList();
   if (name === 'contacts') renderAdminContactForm();
+  if (name === 'channels') renderAdminChannelForm();
   if (name === 'stats') loadStats();
 }
 
@@ -1112,13 +1126,59 @@ function loadContacts() {
     .catch(() => { /* เน็ตมีปัญหา — ใช้ค่าจากแคช/ค่าเริ่มต้นที่มีอยู่แล้วเงียบๆ */ });
 }
 
+// ============================================================
+// ช่องทางออนไลน์ของบริษัท (LINE OA / Facebook) — action getChannels/updateChannels
+// แสดงเป็นปุ่มบนสุดของแผ่นติดต่อด่วน แยกจากรายชื่อพนักงาน แสดงเฉพาะช่องที่เปิดใช้งานและมีลิงก์
+// ============================================================
+function loadChannels() {
+  fetch(APPS_SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'getChannels' }) })
+    .then(res => res.json())
+    .then(result => {
+      if (result.success && result.channels) {
+        channels = Object.assign({}, channels, result.channels);
+        try { localStorage.setItem(CACHE_KEY_CHANNELS, JSON.stringify(channels)); } catch (e) { /* ไม่เป็นไร */ }
+        renderContactFab();
+      }
+    })
+    .catch(() => { /* เน็ตมีปัญหา — ใช้ค่าจากแคช/ค่าเริ่มต้นที่มีอยู่แล้วเงียบๆ */ });
+}
+
+const CHANNEL_META = {
+  line: { icon: 'fab fa-line', cls: 'channel-btn-line' },
+  facebook: { icon: 'fab fa-facebook-f', cls: 'channel-btn-fb' },
+};
+
+/** กันช่องลิงก์ถูกใช้แทรก javascript:/data: URI (ตอนนี้แก้ได้แค่จากแอดมินเท่านั้น แต่กันไว้เผื่ออนาคต) */
+function isSafeHttpUrl(url) {
+  return /^https?:\/\//i.test(String(url || '').trim());
+}
+
+function buildChannelButtonsHtml() {
+  const active = ['line', 'facebook'].filter((key) => channels[key] && channels[key].enabled && channels[key].url && isSafeHttpUrl(channels[key].url));
+  if (!active.length) return '';
+  const buttons = active.map((key) => {
+    const c = channels[key];
+    const meta = CHANNEL_META[key];
+    return `
+      <a class="channel-btn ${meta.cls}" href="${escapeAttr(c.url)}" target="_blank" rel="noopener noreferrer">
+        <span class="channel-btn-icon"><i class="${meta.icon}"></i></span>
+        <span class="channel-btn-label">${escapeHtml(c.label || '')}</span>
+        <i class="fas fa-chevron-right channel-btn-arrow"></i>
+      </a>`;
+  }).join('');
+  return `<div class="channel-btns">${buttons}</div>`;
+}
+
 function renderContactFab() {
   const list = document.getElementById('contactSheetList');
   if (!list) return;
-  const hasAny = contacts.some(c => c.name || c.phone);
+  const hasChannels = ['line', 'facebook'].some((key) => channels[key] && channels[key].enabled && channels[key].url);
+  const hasContacts = contacts.some(c => c.name || c.phone);
   const fab = document.getElementById('contactFab');
-  if (fab) fab.classList.toggle('hidden', !hasAny);
-  list.innerHTML = contacts.map(c => {
+  if (fab) fab.classList.toggle('hidden', !hasChannels && !hasContacts);
+
+  const channelHtml = buildChannelButtonsHtml();
+  const contactRows = contacts.map(c => {
     if (!c.name && !c.phone) return '';
     const initial = escapeHtml((c.name || '?').trim().slice(0, 1));
     return `
@@ -1133,6 +1193,9 @@ function renderContactFab() {
         </div>
       </div>`;
   }).join('');
+
+  const divider = (channelHtml && hasContacts) ? `<div class="channel-divider">ทีมงาน</div>` : '';
+  list.innerHTML = channelHtml + divider + contactRows;
 }
 
 function toggleContactSheet() {
@@ -1291,6 +1354,54 @@ async function handleSaveContacts() {
     { closeModalOnSuccess: false, onSuccess: () => { contacts = cleaned; try { localStorage.setItem(CACHE_KEY_CONTACTS, JSON.stringify(contacts)); } catch (e) {} renderContactFab(); } }
   );
   if (ok) { contacts = cleaned; renderContactFab(); renderAdminContactForm(); }
+}
+
+// ============================================================
+// หน้าแอดมิน "ช่องทางออนไลน์" — ตั้งค่าปุ่ม LINE OA / Facebook ที่โชว์ในแผ่นติดต่อด่วนของลูกค้า
+// เก็บที่ backend แยกจากผู้ติดต่อรายคน (action getChannels/updateChannels) เพราะเป็นช่องทางของบริษัท
+// ============================================================
+const CHANNEL_FORM_META = [
+  { key: 'line', label: 'LINE OA', icon: 'fab fa-line', cls: 'channel-admin-line', placeholder: 'https://lin.ee/xxxxxxx หรือ https://line.me/ti/p/~xxxx' },
+  { key: 'facebook', label: 'Facebook', icon: 'fab fa-facebook-f', cls: 'channel-admin-fb', placeholder: 'https://facebook.com/... หรือ https://m.me/...' },
+];
+
+function renderAdminChannelForm() {
+  const wrap = document.getElementById('channelAdminForm');
+  if (!wrap) return;
+  wrap.innerHTML = CHANNEL_FORM_META.map((meta) => {
+    const c = channels[meta.key] || { enabled: false, label: '', url: '' };
+    return `
+      <div class="channel-admin-block ${meta.cls}" data-channel="${meta.key}">
+        <div class="channel-admin-head">
+          <span class="channel-admin-title"><i class="${meta.icon}"></i> ${meta.label}</span>
+          <label class="channel-toggle">
+            <input type="checkbox" class="channel-enabled-input" ${c.enabled ? 'checked' : ''}>
+            <span class="channel-toggle-track"></span>
+          </label>
+        </div>
+        <input type="text" class="channel-label-input" placeholder="ข้อความบนปุ่ม" value="${escapeAttr(c.label || '')}" maxlength="40">
+        <input type="text" class="channel-url-input" placeholder="${escapeAttr(meta.placeholder)}" value="${escapeAttr(c.url || '')}" maxlength="300">
+      </div>`;
+  }).join('') + `<div class="channel-admin-hint"><i class="fas fa-circle-info"></i> ปิดสวิตช์ หรือเว้นลิงก์ว่างไว้ = ปุ่มนั้นจะไม่แสดงให้ลูกค้าเห็น</div>`;
+}
+
+async function handleSaveChannels() {
+  const wrap = document.getElementById('channelAdminForm');
+  const blocks = wrap ? Array.from(wrap.querySelectorAll('.channel-admin-block')) : [];
+  const cleaned = {};
+  blocks.forEach((block) => {
+    const key = block.dataset.channel;
+    cleaned[key] = {
+      enabled: !!block.querySelector('.channel-enabled-input').checked,
+      label: (block.querySelector('.channel-label-input').value || '').trim(),
+      url: (block.querySelector('.channel-url-input').value || '').trim(),
+    };
+  });
+  const ok = await sendToCloud(
+    { action: 'updateChannels', channels: cleaned },
+    { closeModalOnSuccess: false, onSuccess: () => { channels = cleaned; try { localStorage.setItem(CACHE_KEY_CHANNELS, JSON.stringify(channels)); } catch (e) {} renderContactFab(); } }
+  );
+  if (ok) { channels = cleaned; renderContactFab(); renderAdminChannelForm(); }
 }
 
 // ============================================================

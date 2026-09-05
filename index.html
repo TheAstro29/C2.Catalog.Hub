@@ -18,7 +18,7 @@
        ทิ้งไป ส่วน CSS ไม่ได้โหลดทั้งไฟล์ของ Bootstrap มา (จะไปทับดีไซน์ธีมเข้มทั้งเว็บ) แต่คัดมาแค่กติกา CSS ที่ตัว
        Carousel JS ต้องพึ่งจริงๆ (คลาส .carousel-item / .carousel-item-next ฯลฯ) มาใส่ไว้ใน style.css แทน -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=23" />
+  <link rel="stylesheet" href="style.css?v=24" />
 </head>
 <body class="pb-tabbar">
 
@@ -129,6 +129,10 @@
           <span class="admin-menu-icon" style="background:#3AA6A6"><i class="fas fa-headset"></i></span>
           <span class="admin-menu-label">ผู้ติดต่อด่วน</span>
         </button>
+        <button class="admin-menu-tile" onclick="openAdminSection('channels')">
+          <span class="admin-menu-icon channel-menu-icon"><i class="fas fa-comments"></i></span>
+          <span class="admin-menu-label">ช่องทางออนไลน์</span>
+        </button>
         <button class="admin-menu-tile" onclick="openAdminSection('stats')">
           <span class="admin-menu-icon" style="background:#3F654D"><i class="fas fa-chart-simple"></i></span>
           <span class="admin-menu-label">สรุปข้อมูล</span>
@@ -166,6 +170,14 @@
           <div id="contactAdminForm" class="contact-admin-form"></div>
           <button class="btn-secondary contact-add-btn" onclick="handleAddContactRow()"><i class="fas fa-plus"></i> เพิ่มผู้ติดต่อ</button>
           <button class="btn-primary" onclick="handleSaveContacts()"><i class="fas fa-save"></i> บันทึกผู้ติดต่อ</button>
+        </div>
+      </div>
+
+      <!-- หน้าช่องทางออนไลน์ — ตั้งค่าปุ่ม LINE OA / Facebook ที่จะโชว์ในแผ่นติดต่อด่วนของลูกค้า (ช่องทางของบริษัท แยกจากรายชื่อพนักงาน) -->
+      <div id="adminSection-channels" class="admin-section hidden">
+        <div class="cat-collapse-body contact-collapse-body">
+          <div id="channelAdminForm" class="channel-admin-form"></div>
+          <button class="btn-primary" onclick="handleSaveChannels()"><i class="fas fa-save"></i> บันทึกช่องทางออนไลน์</button>
         </div>
       </div>
 
@@ -237,6 +249,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=23"></script>
+  <script src="script.js?v=24"></script>
 </body>
 </html>
