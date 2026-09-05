@@ -737,16 +737,31 @@ function openAdminModal() {
   showAdminMainMenu();
 }
 
-async function closeModal() {
-  // เช็คลำดับหมวดหมู่ที่ลากค้างไว้แบบเดียวกับปุ่มย้อนกลับ กันปิดหน้าต่างทั้งอันไปเฉยๆ แล้วลำดับที่จัดไว้หาย
+/** เช็คว่ามีลำดับ (หมวดหมู่/สไลด์) ที่ลากจัดค้างไว้แต่ยังไม่ได้กดบันทึกหรือไม่ — ถามยืนยันก่อนออกจากหน้านั้น
+ * กันลากจัดเสร็จแล้วลืมกดบันทึก แล้วปิด/ย้อนกลับไปเฉยๆ จนลำดับที่จัดไว้หายไปโดยไม่ตั้งใจ
+ * คืนค่า true = ออกจากหน้าได้เลย (ไม่มีอะไรค้าง หรือผู้ใช้ยืนยันจะออกโดยไม่บันทึก), false = ผู้ใช้เลือกอยู่ต่อ */
+async function confirmDiscardDirtyOrders() {
   if (catOrderDirty) {
     const res = await Swal.fire({
-      title: 'ยังไม่ได้บันทึกลำดับหมวดหมู่', text: 'ปิดหน้าต่างนี้ลำดับที่จัดไว้จะหายไป ต้องการปิดเลยไหม?',
-      icon: 'warning', showCancelButton: true, confirmButtonText: 'ปิดโดยไม่บันทึก', cancelButtonText: 'อยู่ต่อ',
+      title: 'ยังไม่ได้บันทึกลำดับหมวดหมู่', text: 'ออกจากหน้านี้ลำดับที่จัดไว้จะหายไป ต้องการออกเลยไหม?',
+      icon: 'warning', showCancelButton: true, confirmButtonText: 'ออกโดยไม่บันทึก', cancelButtonText: 'อยู่ต่อ',
     });
-    if (!res.isConfirmed) return;
+    if (!res.isConfirmed) return false;
     catOrderDirty = false;
   }
+  if (slideOrderDirty) {
+    const res = await Swal.fire({
+      title: 'ยังไม่ได้บันทึกลำดับสไลด์', text: 'ออกจากหน้านี้ลำดับที่จัดไว้จะหายไป ต้องการออกเลยไหม?',
+      icon: 'warning', showCancelButton: true, confirmButtonText: 'ออกโดยไม่บันทึก', cancelButtonText: 'อยู่ต่อ',
+    });
+    if (!res.isConfirmed) return false;
+    slideOrderDirty = false;
+  }
+  return true;
+}
+
+async function closeModal() {
+  if (!(await confirmDiscardDirtyOrders())) return;
   document.getElementById('adminModal').classList.add('hidden');
   resetToAddMode();
   showAdminMainMenu();
@@ -780,15 +795,7 @@ function openAdminSection(name) {
 
 /** ปุ่มย้อนกลับที่หัว modal — ถ้ากำลังแก้ไขสินค้าค้างอยู่ ให้ยกเลิกโหมดแก้ไขไปด้วยกันเลย */
 async function backToAdminMenu() {
-  // ถ้าลากจัดลำดับหมวดหมู่ค้างไว้แล้วยังไม่ได้กดบันทึก ถามยืนยันก่อนออกไป กันลากเสร็จแล้วลืมกดบันทึกโดยไม่ได้ตั้งใจ
-  if (catOrderDirty) {
-    const res = await Swal.fire({
-      title: 'ยังไม่ได้บันทึกลำดับหมวดหมู่', text: 'ออกจากหน้านี้ลำดับที่จัดไว้จะหายไป ต้องการออกเลยไหม?',
-      icon: 'warning', showCancelButton: true, confirmButtonText: 'ออกโดยไม่บันทึก', cancelButtonText: 'อยู่ต่อ',
-    });
-    if (!res.isConfirmed) return;
-    catOrderDirty = false;
-  }
+  if (!(await confirmDiscardDirtyOrders())) return;
   if (currentAction === 'edit') resetToAddMode();
   showAdminMainMenu();
 }
@@ -1005,15 +1012,25 @@ function closeBrochureOverlay() {
 }
 
 // --- Admin: จัดการสไลด์หน้าแรก ---
+// ลากที่ไอคอน ☰ ด้านหน้าเพื่อจัดลำดับใหม่ได้ (แบบเดียวกับหมวดหมู่) — ลากจัดได้อิสระหลายรอบก่อน ไม่บันทึกทันทีทีละครั้ง
+// ต้องกดปุ่ม "บันทึกลำดับสไลด์" เองตอนจัดเสร็จแล้ว (ลำดับนี้เป็นลำดับเดียวกับที่ใช้แสดงในสไลด์หน้าแรก)
+let slideOrderDirty = false; // true = ลากจัดลำดับไว้แล้วแต่ยังไม่ได้กดบันทึก
+
 function renderAdminSlideList() {
   const list = document.getElementById('slideAdminList');
   if (!list) return;
+  slideOrderDirty = false;
+  const saveOrderBtn = document.getElementById('slideSaveOrderBtn');
+  if (saveOrderBtn) saveOrderBtn.classList.add('hidden');
   if (!slides.length) {
     list.innerHTML = `<div class="slide-admin-empty">ยังไม่มีสไลด์ — เพิ่มสไลด์แรกด้านล่างนี้ได้เลย</div>`;
     return;
   }
+  // เก็บ imageUrl เต็มไว้ใน data-img (ใช้เป็นตัวอ้างอิงตอนอ่านลำดับจาก DOM ตอนกดบันทึก) — ใช้ index ตอน render
+  // ตอนลบเท่านั้น (handleDeleteSlide อ้างจาก array ปัจจุบัน ไม่ผูกกับ index ที่ตายตัวในตัว DOM)
   list.innerHTML = slides.map((s, i) => `
-    <div class="slide-admin-row">
+    <div class="slide-admin-row" data-img="${escapeAttr(s.imageUrl)}">
+      <span class="drag-handle" title="ลากเพื่อจัดลำดับ"><i class="fas fa-grip-lines"></i></span>
       <div class="slide-admin-thumb"><img src="${escapeAttr(driveImageUrl(s.imageUrl, 'w200'))}" alt="" onerror="this.src='${localPlaceholder('C2TECH')}'"></div>
       <div class="slide-admin-text">
         <div><i class="fas fa-image"></i> ${escapeHtml(truncateMiddle(s.imageUrl))}</div>
@@ -1023,6 +1040,104 @@ function renderAdminSlideList() {
         <button class="icon-sq-btn danger" onclick="handleDeleteSlide(${i})" title="ลบสไลด์นี้"><i class="fas fa-trash"></i></button>
       </div>
     </div>`).join('');
+  initSlideDragDelegation();
+}
+
+// --- ลากจัดลำดับสไลด์ (Pointer Events — เทคนิคเดียวกับที่ใช้กับหมวดหมู่: closest-row-by-midpoint + FLIP animation) ---
+let slideDragState = null;
+
+function initSlideDragDelegation() {
+  const list = document.getElementById('slideAdminList');
+  if (!list || list.dataset.dragBound) return;
+  list.dataset.dragBound = '1';
+
+  list.addEventListener('pointerdown', (e) => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    const row = handle.closest('.slide-admin-row');
+    if (!row) return;
+    e.preventDefault();
+    row.classList.add('dragging');
+    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ไม่เป็นไร */ }
+    slideDragState = { row, pointerId: e.pointerId, listEl: list };
+  });
+
+  list.addEventListener('pointermove', (e) => {
+    if (!slideDragState || slideDragState.pointerId !== e.pointerId) return;
+    const { row, listEl } = slideDragState;
+    const y = e.clientY;
+    const others = Array.from(listEl.querySelectorAll('.slide-admin-row')).filter(r => r !== row);
+    if (!others.length) return;
+
+    let closest = null, closestDist = Infinity;
+    others.forEach((other) => {
+      const rect = other.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      const dist = Math.abs(y - mid);
+      if (dist < closestDist) { closestDist = dist; closest = { el: other, mid }; }
+    });
+    if (!closest) return;
+
+    const target = y < closest.mid ? closest.el : closest.el.nextSibling;
+    if (target === row) return;
+    if (target === null) {
+      if (listEl.lastElementChild === row) return;
+    } else if (target.previousElementSibling === row) {
+      return;
+    }
+
+    const firstRects = new Map(Array.from(listEl.querySelectorAll('.slide-admin-row')).map(r => [r, r.getBoundingClientRect()]));
+    listEl.insertBefore(row, target);
+    Array.from(listEl.querySelectorAll('.slide-admin-row')).forEach((r) => {
+      if (r === row) return;
+      const first = firstRects.get(r);
+      const last = r.getBoundingClientRect();
+      const dy = first.top - last.top;
+      if (!dy) return;
+      r.style.transition = 'none';
+      r.style.transform = `translateY(${dy}px)`;
+      requestAnimationFrame(() => {
+        r.style.transition = 'transform .18s ease';
+        r.style.transform = '';
+      });
+    });
+  });
+
+  const endSlideDrag = (e) => {
+    if (!slideDragState || slideDragState.pointerId !== e.pointerId) return;
+    const { row } = slideDragState;
+    row.classList.remove('dragging');
+    slideDragState = null;
+    slideOrderDirty = true;
+    const saveOrderBtn = document.getElementById('slideSaveOrderBtn');
+    if (saveOrderBtn) saveOrderBtn.classList.remove('hidden');
+  };
+  list.addEventListener('pointerup', endSlideDrag);
+  list.addEventListener('pointercancel', endSlideDrag);
+}
+
+/** กดปุ่ม "บันทึกลำดับสไลด์" — อ่านลำดับปัจจุบันจาก DOM (ตามที่ลากจัดไว้) แล้วค่อยส่งไปบันทึกที่เซิร์ฟเวอร์ทีเดียว */
+async function handleSaveSlideOrder() {
+  const list = document.getElementById('slideAdminList');
+  if (!list) return;
+  const order = Array.from(list.querySelectorAll('.slide-admin-row')).map(r => r.dataset.img);
+  await handleReorderSlide(order);
+}
+
+/** บันทึกลำดับสไลด์ใหม่ไปที่เซิร์ฟเวอร์ (อ้างอิงด้วย imageUrl) — ถ้าไม่สำเร็จ (เช่นมีคนแก้สไลด์จากที่อื่นพร้อมกัน)
+ * จะรีเฟรชข้อมูลจริงจากเซิร์ฟเวอร์แล้ววาดใหม่ให้ตรงกัน */
+async function handleReorderSlide(order) {
+  const ok = await sendToCloud(
+    { action: 'reorderSlide', order },
+    { closeModalOnSuccess: false, onSuccess: loadSlides }
+  );
+  if (ok) {
+    slideOrderDirty = false;
+    const saveOrderBtn = document.getElementById('slideSaveOrderBtn');
+    if (saveOrderBtn) saveOrderBtn.classList.add('hidden');
+  } else {
+    setTimeout(loadSlides, 950);
+  }
 }
 
 function truncateMiddle(str, max) {

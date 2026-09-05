@@ -18,7 +18,7 @@
        ทิ้งไป ส่วน CSS ไม่ได้โหลดทั้งไฟล์ของ Bootstrap มา (จะไปทับดีไซน์ธีมเข้มทั้งเว็บ) แต่คัดมาแค่กติกา CSS ที่ตัว
        Carousel JS ต้องพึ่งจริงๆ (คลาส .carousel-item / .carousel-item-next ฯลฯ) มาใส่ไว้ใน style.css แทน -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=24" />
+  <link rel="stylesheet" href="style.css?v=26" />
 </head>
 <body class="pb-tabbar">
 
@@ -156,6 +156,8 @@
       <div id="adminSection-slides" class="admin-section hidden">
         <div class="cat-collapse-body slide-collapse-body">
           <div id="slideAdminList" class="slide-admin-list"></div>
+          <!-- ลากจัดลำดับได้อิสระก่อน ไม่บันทึกทันทีทีละครั้ง — กดปุ่มนี้ตอนจัดเสร็จแล้วค่อยบันทึกทีเดียว (แบบเดียวกับหมวดหมู่) -->
+          <button id="slideSaveOrderBtn" class="btn-primary hidden" onclick="handleSaveSlideOrder()"><i class="fas fa-save"></i> บันทึกลำดับสไลด์</button>
           <div class="slide-admin-add">
             <input type="text" id="newSlideImgInput" placeholder="ลิงก์รูปภาพ (Google Drive)">
             <input type="text" id="newSlideLinkInput" placeholder="ลิงก์ไฟล์ที่จะเปิดเมื่อกด (ไม่บังคับ — เว้นว่างถ้าจะให้โชว์ภาพเฉยๆ)">
@@ -249,6 +251,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=24"></script>
+  <script src="script.js?v=26"></script>
 </body>
 </html>

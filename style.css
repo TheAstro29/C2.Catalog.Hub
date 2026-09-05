@@ -152,8 +152,13 @@ img { -webkit-user-drag: none; }
 .hero-slider {
   max-width: 1000px; margin: 14px auto 4px; padding: 0 16px;
 }
+/* เดิมกำหนดความสูงตายตัวคนละค่าตามขนาดจอ (190/280/340/400px) ทำให้อัตราส่วนกรอบ (กว้าง:สูง) เปลี่ยนไปเรื่อยๆ
+   ตามความกว้างจอ ไม่ตรงกับอัตราส่วนภาพที่ทีมสื่อผลิตมา (1424×736 ≈ 1.93:1) เลยโดนครอปคนละด้านในแต่ละขนาดจอ
+   (มือถือครอปซ้าย-ขวา / คอมพิวเตอร์ครอปบน-ล่าง) เปลี่ยนมาใช้ aspect-ratio ล็อกสัดส่วนกรอบให้ตรงกับภาพเป๊ะแทน
+   ความสูงจะปรับตามความกว้างจออัตโนมัติ แต่สัดส่วนคงที่ทุกขนาดจอ — ถ้าสไลด์ใบไหนผลิตมาที่อัตราส่วนนี้พอดี
+   จะเต็มภาพไม่มีส่วนไหนถูกตัดทั้งบนมือถือและคอมพิวเตอร์ */
 #heroCarousel .carousel-inner {
-  height: 190px; border-radius: 18px; overflow: hidden;
+  aspect-ratio: 1424 / 736; border-radius: 18px; overflow: hidden;
   border: 1px solid var(--glass-border); background: var(--glass);
 }
 #heroCarousel .carousel-item { height: 100%; cursor: pointer; }
@@ -351,10 +356,10 @@ img { -webkit-user-drag: none; }
   color: var(--muted); font-size: 13px; cursor: grab; touch-action: none; /* กันเบราว์เซอร์แย่งลากไปเลื่อนหน้าจอแทน */
 }
 .drag-handle:active { color: var(--mint); }
-.cat-admin-row.dragging, .contact-admin-row.dragging {
+.cat-admin-row.dragging, .contact-admin-row.dragging, .slide-admin-row.dragging {
   background: rgba(124,242,180,.08); border-radius: 10px; opacity: .85; cursor: grabbing;
 }
-.cat-admin-row.dragging .drag-handle, .contact-admin-row.dragging .drag-handle { cursor: grabbing; color: var(--mint); }
+.cat-admin-row.dragging .drag-handle, .contact-admin-row.dragging .drag-handle, .slide-admin-row.dragging .drag-handle { cursor: grabbing; color: var(--mint); }
 .slide-admin-add { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px dashed var(--glass-border); }
 .slide-admin-add input { width: 100%; padding: 9px 11px; border-radius: 9px; border: 1px solid var(--glass-border); background: rgba(255,255,255,.04); color: var(--ink); font-size: 12px; font-family: inherit; outline: none; }
 .slide-admin-add input::placeholder { color: var(--muted); }
@@ -580,12 +585,10 @@ img { -webkit-user-drag: none; }
   .hdr-title { font-size: 19px; }
   .card-img { height: 160px; }
   .card-title { font-size: 13.5px; }
-  #heroCarousel .carousel-inner { height: 280px; }
 }
 @media (min-width: 1024px) {
   .grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
   .hdr-title { font-size: 21px; }
-  #heroCarousel .carousel-inner { height: 340px; }
 }
 @media (min-width: 1400px) {
   .grid { grid-template-columns: repeat(5, minmax(0,1fr)); gap: 20px; }
@@ -593,7 +596,6 @@ img { -webkit-user-drag: none; }
   .hdr-title { font-size: 26px; }
   .search-box input { font-size: 16px; }
   .tab-pill { font-size: 14px; padding: 9px 20px; }
-  #heroCarousel .carousel-inner { height: 400px; }
 }
 @media (min-width: 1800px) {
   .grid { grid-template-columns: repeat(5, minmax(0,1fr)); gap: 26px; }
