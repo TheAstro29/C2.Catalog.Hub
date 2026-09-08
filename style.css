@@ -86,7 +86,7 @@ img { -webkit-user-drag: none; }
 }
 .hdr-inner { max-width: 1000px; margin: 0 auto; }
 .hdr-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 10px; }
-.hdr-brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.hdr-brand { display: flex; align-items: center; gap: 9px; min-width: 0; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
 .hdr-badge {
   width: 36px; height: 36px; border-radius: 10px; background: var(--glass); border: 1px solid var(--glass-border);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
@@ -127,6 +127,26 @@ img { -webkit-user-drag: none; }
   white-space: nowrap; cursor: pointer;
 }
 .tab-pill.active { background: var(--mint); color: #08150f; border-color: var(--mint); font-weight: 700; }
+
+/* ---------- หมวด "Staff เท่านั้น" — แยกแถวต่างหากใต้แถวหมวดหมู่ปกติ ซ่อนสนิทถ้ายังไม่ปลดล็อก ---------- */
+.staff-tabs-wrap { max-width: 1000px; margin: 0 auto; padding: 6px 0 2px; border-top: 1px dashed rgba(240,185,58,.35); }
+.staff-tabs-label {
+  font-size: 9.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #f0b93a;
+  padding: 7px 0 4px; display: flex; align-items: center; gap: 5px;
+}
+.staff-tabs .tab-pill { background: rgba(240,185,58,.12); border-color: rgba(240,185,58,.45); color: #f0b93a; font-weight: 700; }
+.staff-tabs .tab-pill.active { background: linear-gradient(90deg,#f0b93a,#c9931e); color: #3a2a04; border-color: #c9931e; }
+#staffLockBtn.unlocked { background: linear-gradient(135deg,#f0b93a,#c9931e); color: #3a2a04; border-color: #c9931e; }
+.staff-card-tag {
+  position: absolute; top: 7px; left: 7px; background: linear-gradient(90deg,#f0b93a,#c9931e); color: #3a2a04;
+  font-size: 8px; font-weight: 800; padding: 3px 9px; border-radius: 20px; z-index: 2; box-shadow: 0 3px 8px rgba(0,0,0,.3);
+}
+.card.staff-product { border-color: rgba(240,185,58,.5); background: rgba(240,185,58,.05); }
+.staff-mini-tag {
+  display: inline-block; background: linear-gradient(90deg,#f0b93a,#c9931e); color: #3a2a04; font-size: 8.5px;
+  font-weight: 800; padding: 2px 7px; border-radius: 20px; margin-left: 6px; vertical-align: middle;
+}
+.staff-check-row { margin-top: 8px; margin-bottom: 10px; }
 
 /* ---------- กติกา CSS ขั้นต่ำที่ Bootstrap Carousel (bootstrap.bundle.min.js) ต้องพึ่งเพื่อให้กลไกเลื่อนสไลด์
    ทำงานได้ — คัดมาเฉพาะส่วนนี้จาก bootstrap.css แทนการโหลดทั้งไฟล์ เพื่อไม่ให้ไปทับดีไซน์ธีมเข้มของทั้งเว็บ
@@ -375,6 +395,25 @@ img { -webkit-user-drag: none; }
 .form-field select option { background: #10241b; color: var(--ink); }
 .hint { font-size: 10.5px; color: var(--muted); margin-top: 5px; }
 .form-actions { padding-top: 8px; border-top: 1px solid var(--glass-border); margin-top: 4px; }
+
+/* ---------- ป้ายไฮไลท์ NEW/HOT ในฟอร์มเพิ่ม/แก้ไขสินค้า ---------- */
+.highlight-check-row {
+  display: flex; align-items: center; gap: 9px; background: rgba(255,255,255,.04); border: 1px solid var(--glass-border);
+  border-radius: 11px; padding: 9px 12px; margin-bottom: 7px;
+}
+.highlight-check-row .hl-ic { width: 18px; text-align: center; font-size: 13px; }
+.highlight-check-row .hl-label { font-size: 12.5px; font-weight: 500; color: var(--ink); flex: 1; }
+.highlight-check-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--mint); }
+
+/* ---------- ป้ายไฮไลท์ NEW/HOT บนการ์ดสินค้า (แบบ B: แคปซูลมุมซ้ายบน — เลือกมุมซ้ายเพราะมุมขวาบนถูกใช้โดย
+   ปุ่มเลือกไว้แชร์ (.pin-btn) และปุ่มแก้ไข/ลบของแอดมิน (.admin-actions) อยู่แล้ว) ---------- */
+.badge-pill-wrap { position: absolute; top: 7px; left: 7px; display: flex; flex-direction: column; gap: 4px; z-index: 2; }
+.badge-pill {
+  font-size: 8.5px; font-weight: 800; padding: 3px 9px 3px 7px; border-radius: 20px; display: flex; align-items: center;
+  gap: 3px; color: #08150f; box-shadow: 0 3px 8px rgba(0,0,0,.35); white-space: nowrap;
+}
+.badge-pill.new { background: linear-gradient(90deg, #7CF2B4, #4fd693); }
+.badge-pill.hot { background: linear-gradient(90deg, #ffb35e, #ff6b5e); color: #3a0f0a; }
 
 /* ---------- File type pills ---------- */
 .type-pills { display: flex; gap: 7px; flex-wrap: wrap; }

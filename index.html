@@ -18,7 +18,7 @@
        ทิ้งไป ส่วน CSS ไม่ได้โหลดทั้งไฟล์ของ Bootstrap มา (จะไปทับดีไซน์ธีมเข้มทั้งเว็บ) แต่คัดมาแค่กติกา CSS ที่ตัว
        Carousel JS ต้องพึ่งจริงๆ (คลาส .carousel-item / .carousel-item-next ฯลฯ) มาใส่ไว้ใน style.css แทน -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=27" />
+  <link rel="stylesheet" href="style.css?v=30" />
 </head>
 <body class="pb-tabbar">
 
@@ -57,7 +57,7 @@
   <header class="hdr no-print">
     <div class="hdr-inner">
       <div class="hdr-top">
-        <div class="hdr-brand">
+        <div class="hdr-brand" onclick="handleLogoTap()" title="">
           <div class="hdr-badge"><img src="assets/c2loop-mark-white.svg" alt="Catalog Hub"></div>
           <div>
             <div class="hdr-title">CATALOG HUB</div>
@@ -79,6 +79,10 @@
     </div>
     <div id="offlineChip" class="offline-chip hidden"><i class="fas fa-wifi"></i> <span id="offlineChipText">ออฟไลน์ — แสดงแคตตาล็อกที่บันทึกไว้ล่าสุด</span></div>
     <nav id="catTabs" class="tabs no-scrollbar"></nav>
+    <div id="staffTabsWrap" class="staff-tabs-wrap hidden">
+      <div class="staff-tabs-label"><i class="fas fa-lock"></i> หมวด STAFF</div>
+      <nav id="staffCatTabs" class="tabs no-scrollbar staff-tabs"></nav>
+    </div>
   </header>
 
   <!-- สไลด์หน้าแรก (ไม่ sticky — เลื่อนหายไปพร้อมเนื้อหาตามปกติ) หมุนเองอัตโนมัติ กดแล้วเปิดโบรชัวร์ที่ Admin ผูกไว้
@@ -152,6 +156,10 @@
           <button id="catSaveOrderBtn" class="btn-primary hidden" onclick="handleSaveCatOrder()"><i class="fas fa-save"></i> บันทึกลำดับหมวดหมู่</button>
           <div class="slide-admin-add">
             <input type="text" id="newCatInput" placeholder="ชื่อหมวดหมู่ใหม่...">
+            <div class="highlight-check-row staff-check-row">
+              <span class="hl-ic">🔒</span><span class="hl-label">Staff only (ต้องใส่รหัสก่อนดู — ลูกค้าทั่วไปจะไม่เห็นหมวดนี้เลย)</span>
+              <input type="checkbox" id="newCatStaffOnly">
+            </div>
             <button class="btn-primary" onclick="handleAddCat()"><i class="fas fa-plus"></i> เพิ่มหมวดหมู่</button>
           </div>
         </div>
@@ -226,6 +234,17 @@
             </div>
             <div class="hint">วางลิงก์ที่แชร์แบบ "ทุกคนที่มีลิงก์ดูได้" จาก Google Drive</div>
           </div>
+          <div class="form-field">
+            <label class="label-mini">ป้ายไฮไลท์ (เลือกได้พร้อมกันทั้ง 2 อัน)</label>
+            <div class="highlight-check-row">
+              <span class="hl-ic">✨</span><span class="hl-label">สินค้าใหม่ (NEW)</span>
+              <input type="checkbox" id="inputIsNew">
+            </div>
+            <div class="highlight-check-row">
+              <span class="hl-ic">🔥</span><span class="hl-label">สินค้าขายดี (HOT)</span>
+              <input type="checkbox" id="inputIsHot">
+            </div>
+          </div>
           <div class="form-actions">
             <button id="mainActionBtn" class="btn-primary" onclick="handleProductAction()">บันทึกข้อมูลสินค้า</button>
             <button onclick="resetToAddMode()" id="resetBtn" class="btn-text hidden">ยกเลิกแก้ไข / เพิ่มใหม่</button>
@@ -256,6 +275,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=27"></script>
+  <script src="script.js?v=30"></script>
 </body>
 </html>

@@ -13,11 +13,15 @@ const CACHE_KEY_SLIDES = 'catalogHub_slides_v1';
 const CACHE_KEY_SYNC_TIME = 'catalogHub_lastSync_v2';
 const CACHE_KEY_CONTACTS = 'catalogHub_contacts_v1';
 const CACHE_KEY_CHANNELS = 'catalogHub_channels_v1';
+const CACHE_KEY_CAT_STAFF_FLAGS = 'catalogHub_catStaffFlags_v1';
+const CACHE_KEY_STAFF_UNLOCK = 'catalogHub_staffUnlocked_v1';
 const CACHE_KEY_THEME = 'catalogHub_theme_v1';
 const CACHE_KEY_INSTALL_DISMISSED = 'catalogHub_installDismissed_v1';
 
 let catalogs = [];
 let categories = [];
+let categoryStaffFlags = {}; // { catName: true }  — หมวดหมู่ไหนที่ต้องปลดล็อกด้วยรหัสก่อนถึงจะเห็น
+let staffUnlocked = false; // ปลดล็อกหมวด Staff แล้วหรือยัง — จำไว้ถาวรใน localStorage จนกว่าจะกดล็อกออกเอง
 let slides = []; // [{ imageUrl, linkUrl }]
 let contacts = [
   { name: 'นพดล', role: 'CEO', phone: '' },
@@ -39,6 +43,8 @@ const selectedIdx = new Set(); // ดัชนีสินค้าที่เ�
 
 // --- Init ---
 function init() {
+  try { staffUnlocked = localStorage.getItem(CACHE_KEY_STAFF_UNLOCK) === '1'; } catch (e) { /* ไม่เป็นไร */ }
+  updateStaffLockIcon();
   loadFromCache();
   fetchData();
   loadSlides();
@@ -56,6 +62,8 @@ function loadFromCache() {
     const cachedProducts = localStorage.getItem(CACHE_KEY_PRODUCTS);
     const cachedCats = localStorage.getItem(CACHE_KEY_CATEGORIES);
     const cachedSlides = localStorage.getItem(CACHE_KEY_SLIDES);
+    const cachedStaffFlags = localStorage.getItem(CACHE_KEY_CAT_STAFF_FLAGS);
+    if (cachedStaffFlags) { try { categoryStaffFlags = JSON.parse(cachedStaffFlags); } catch (e) { /* ไม่เป็นไร */ } }
     if (cachedProducts) {
       catalogs = JSON.parse(cachedProducts);
       categories = cachedCats ? JSON.parse(cachedCats) : ['ทั่วไป'];
@@ -135,8 +143,12 @@ function fetchData(isSilent = false) {
           let freshCategories = [...new Set([...sheetCats, ...prodCats])];
           if (freshCategories.length === 0) freshCategories = ['ทั่วไป'];
 
+          const freshStaffFlags = {};
+          catRes.data.forEach((c) => { if (c.name) freshStaffFlags[String(c.name).trim()] = isFlagTrue(c.staffOnly); });
+
           catalogs = freshCatalogs;
           categories = freshCategories;
+          categoryStaffFlags = freshStaffFlags;
           indexCatalogs();
           persistCache();
           showOfflineChip(false);
@@ -153,6 +165,7 @@ function persistCache() {
   try {
     localStorage.setItem(CACHE_KEY_PRODUCTS, JSON.stringify(catalogs));
     localStorage.setItem(CACHE_KEY_CATEGORIES, JSON.stringify(categories));
+    localStorage.setItem(CACHE_KEY_CAT_STAFF_FLAGS, JSON.stringify(categoryStaffFlags));
     localStorage.setItem(CACHE_KEY_SYNC_TIME, new Date().toISOString());
   } catch (e) { /* localStorage เต็ม/ปิดใช้งาน ไม่ต้องหยุดแอปเพราะเรื่องนี้ */ }
 }
@@ -236,6 +249,7 @@ async function askAdminPassword() {
       document.getElementById('logoutBtn').classList.remove('hidden');
       document.getElementById('unlockBtn').classList.add('hidden');
       Swal.fire({ icon: 'success', title: 'ปลดล็อกเรียบร้อย', timer: 1000, showConfirmButton: false });
+      renderTabs();
       renderCatalogs();
     } else {
       Swal.fire({ icon: 'error', title: 'รหัสผ่านไม่ถูกต้อง!', text: result.message || '' });
@@ -245,12 +259,89 @@ async function askAdminPassword() {
   }
 }
 
+// ============================================================
+// หมวด "Staff เท่านั้น" — ปลดล็อกด้วยรหัสผ่านเดียวกันทุกคน (ไม่ใช่ token แอดมิน) แค่ใช้ "ดู" ได้ แก้ไขอะไรไม่ได้เลย
+// เปิดได้ 2 ทาง: กดไอคอนกุญแจที่หัวเว็บ หรือแตะโลโก้ 3 ครั้งติดกัน (ท่าลับ ไม่มีไอคอนโชว์)
+// จำการปลดล็อกไว้ถาวรใน localStorage จนกว่าจะกดล็อกออกเอง — รหัสผ่านเช็คที่ backend เท่านั้น ไม่ฝังไว้ในโค้ดหน้าเว็บ
+// ============================================================
+function updateStaffLockIcon() {
+  const btn = document.getElementById('staffLockBtn');
+  if (!btn) return;
+  btn.classList.toggle('unlocked', staffUnlocked);
+  btn.title = staffUnlocked ? 'ล็อกหมวด Staff' : 'เข้าหมวด Staff';
+  btn.innerHTML = staffUnlocked ? '<i class="fas fa-lock-open"></i>' : '<i class="fas fa-lock"></i>';
+}
+
+let logoTapCount = 0;
+let logoTapTimer = null;
+/** แตะโลโก้แอป 3 ครั้งติดกันภายใน 700ms เพื่อเรียกหน้าใส่รหัส Staff (ท่าลับ ไม่มีไอคอนบอกใบ้) */
+function handleLogoTap() {
+  logoTapCount++;
+  clearTimeout(logoTapTimer);
+  if (logoTapCount >= 3) {
+    logoTapCount = 0;
+    handleStaffTrigger();
+  } else {
+    logoTapTimer = setTimeout(() => { logoTapCount = 0; }, 700);
+  }
+}
+
+/** กดไอคอนกุญแจ (หรือแตะโลโก้ครบ 3 ครั้ง) — ถ้าล็อกอยู่ให้ถามรหัสผ่าน ถ้าปลดล็อกอยู่แล้วให้ถามยืนยันล็อกกลับ */
+function handleStaffTrigger() {
+  if (staffUnlocked) confirmStaffLockOut(); else askStaffPassword();
+}
+
+async function askStaffPassword() {
+  const { value: password } = await Swal.fire({
+    title: 'เข้าหมวด Staff', text: 'กรุณาใส่รหัสผ่านเพื่อดูข้อมูลสเปค/คู่มือสำหรับพนักงาน',
+    input: 'password', inputPlaceholder: 'รหัสผ่าน', showCancelButton: true,
+    confirmButtonText: 'ปลดล็อก', cancelButtonText: 'ยกเลิก',
+  });
+  if (!password) return;
+  Swal.fire({ title: 'กำลังตรวจสอบ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+  try {
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST', body: JSON.stringify({ action: 'checkStaffPassword', password: password.trim() }),
+    });
+    const result = await response.json();
+    if (result.success === true) {
+      staffUnlocked = true;
+      try { localStorage.setItem(CACHE_KEY_STAFF_UNLOCK, '1'); } catch (e) { /* ไม่เป็นไร */ }
+      updateStaffLockIcon();
+      renderTabs();
+      renderCatalogs();
+      Swal.fire({ icon: 'success', title: 'ปลดล็อกหมวด Staff แล้ว', timer: 1200, showConfirmButton: false });
+    } else {
+      Swal.fire({ icon: 'error', title: 'รหัสผ่านไม่ถูกต้อง!', text: result.message || '' });
+    }
+  } catch (error) {
+    Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาดในการเชื่อมต่อ', text: 'โปรดตรวจสอบสัญญาณอินเทอร์เน็ต' });
+  }
+}
+
+async function confirmStaffLockOut() {
+  const res = await Swal.fire({
+    title: 'ล็อกหมวด Staff อีกครั้ง?', icon: 'question', showCancelButton: true,
+    confirmButtonText: 'ล็อก', cancelButtonText: 'ยกเลิก',
+  });
+  if (!res.isConfirmed) return;
+  staffUnlocked = false;
+  try { localStorage.removeItem(CACHE_KEY_STAFF_UNLOCK); } catch (e) { /* ไม่เป็นไร */ }
+  // ถ้ากำลังดูแท็บหมวด Staff อยู่ตอนล็อกออก ต้องสลับกลับไปแท็บ "ทั้งหมด" ไม่งั้นจะค้างอยู่หน้าว่างเปล่า
+  if (categoryStaffFlags[currentFilter]) currentFilter = 'all';
+  updateStaffLockIcon();
+  renderTabs();
+  renderCatalogs();
+  Swal.fire({ icon: 'success', title: 'ล็อกหมวด Staff แล้ว', timer: 1000, showConfirmButton: false });
+}
+
 function handleLogout(silent) {
   const doLogout = () => {
     isAdmin = false; adminToken = null;
     document.getElementById('adminBtn').classList.add('hidden');
     document.getElementById('logoutBtn').classList.add('hidden');
     document.getElementById('unlockBtn').classList.remove('hidden');
+    renderTabs();
     renderCatalogs();
     if (!silent) Swal.fire({ icon: 'success', title: 'ออกจากระบบแอดมินแล้ว', timer: 1000, showConfirmButton: false });
   };
@@ -268,7 +359,9 @@ function handleLogout(silent) {
 function renderTabs() {
   const tabs = document.getElementById('catTabs');
   let html = `<button class="tab-pill ${currentFilter === 'all' ? 'active' : ''}" onclick="filterCategory('all')">ทั้งหมด</button>`;
-  categories.forEach(cat => {
+  // หมวด "Staff only" ไม่แสดงในแถวหมวดหมู่ปกตินี้เลย — แยกไปอยู่แถวต่างหากด้านล่าง (renderStaffTabs)
+  const normalCats = categories.filter(cat => !categoryStaffFlags[cat]);
+  normalCats.forEach(cat => {
     // บั๊กเดิม: ใช้ JSON.stringify(cat) ฝังตรงๆ ใน onclick="..." ซึ่ง JSON.stringify ใส่ " ครอบให้เสมอ
     // แต่ attribute onclick ก็ใช้ " ครอบอยู่แล้วเหมือนกัน พอเจอกันเลยตัด attribute ขาดกลางคัน (เหลือแค่ "filterCategory(")
     // กดแท็บไหนก็ตามที่ไม่ใช่ "ทั้งหมด" เลย error "Unexpected end of input" ทุกครั้ง — แก้โดยใช้ single quote
@@ -276,6 +369,21 @@ function renderTabs() {
     html += `<button class="tab-pill ${currentFilter === cat ? 'active' : ''}" onclick="filterCategory('${jsAttrString(cat)}')">${escapeHtml(cat)}</button>`;
   });
   tabs.innerHTML = html;
+  renderStaffTabs();
+}
+
+/** แถวหมวดหมู่ "Staff เท่านั้น" — ซ่อนสนิททั้งแถวถ้ายังไม่ปลดล็อกด้วยรหัส (และไม่ใช่แอดมินที่ล็อกอินอยู่)
+ * แอดมินเห็นแถวนี้ได้เสมอโดยไม่ต้องใส่รหัส Staff เพิ่ม เพราะต้องจัดการ/แก้ไขสินค้าในหมวดนี้ได้อยู่แล้ว */
+function renderStaffTabs() {
+  const wrap = document.getElementById('staffTabsWrap');
+  const staffTabsEl = document.getElementById('staffCatTabs');
+  if (!wrap || !staffTabsEl) return;
+  const staffCats = categories.filter(cat => categoryStaffFlags[cat]);
+  const canSee = staffCats.length > 0 && (staffUnlocked || isAdmin);
+  wrap.classList.toggle('hidden', !canSee);
+  staffTabsEl.innerHTML = canSee
+    ? staffCats.map(cat => `<button class="tab-pill ${currentFilter === cat ? 'active' : ''}" onclick="filterCategory('${jsAttrString(cat)}')">${escapeHtml(cat)}</button>`).join('')
+    : '';
 }
 
 /** เตรียมข้อความให้ฝังใน onclick="...('ตรงนี้')" ได้อย่างปลอดภัย — escape backslash/apostrophe ให้เป็น JS string literal
@@ -367,12 +475,29 @@ function sortByCategoryOrder(items) {
   });
 }
 
+/** เช็คว่าค่าที่มาจาก Sheet (คอลัมน์ isNew/isHot) หมายถึง "ติ๊กไว้" หรือไม่ — ยอมรับได้ทั้ง TRUE/true/1/yes
+ * เพราะ Google Sheets เก็บ boolean ได้หลายแบบขึ้นกับว่าใส่มาอย่างไร (พิมพ์เอง/ติ๊ก checkbox ในชีต) */
+function isFlagTrue(v) {
+  return /^(true|1|yes)$/i.test(String(v || '').trim());
+}
+
+/** สร้าง HTML ป้ายไฮไลท์ NEW/HOT มุมซ้ายบนของการ์ด (แบบ B ที่เลือกไว้) — ไม่แสดงเลยถ้าไม่ได้ติ๊กอันไหนไว้ */
+function buildHighlightBadgesHtml(item) {
+  const badges = [];
+  if (isFlagTrue(item.isNew)) badges.push(`<div class="badge-pill new">✨ NEW</div>`);
+  if (isFlagTrue(item.isHot)) badges.push(`<div class="badge-pill hot">🔥 HOT</div>`);
+  if (!badges.length) return '';
+  return `<div class="badge-pill-wrap">${badges.join('')}</div>`;
+}
+
 function renderCatalogs() {
   const list = document.getElementById('catalogList');
-  let filtered = catalogs.filter(item =>
-    (currentFilter === 'all' || item.category === currentFilter) &&
-    (!currentSearch || item.title.toLowerCase().includes(currentSearch))
-  );
+  let filtered = catalogs.filter(item => {
+    // สินค้าในหมวด Staff only ถูกซ่อนสนิทจากทุกที่ (รวมแท็บ "ทั้งหมด") จนกว่าจะปลดล็อกด้วยรหัส — ยกเว้นแอดมินที่ล็อกอินอยู่
+    if (categoryStaffFlags[item.category] && !staffUnlocked && !isAdmin) return false;
+    return (currentFilter === 'all' || item.category === currentFilter) &&
+      (!currentSearch || item.title.toLowerCase().includes(currentSearch));
+  });
   if (currentFilter === 'all') filtered = sortByCategoryOrder(filtered);
 
   if (filtered.length === 0) {
@@ -386,15 +511,17 @@ function renderCatalogs() {
     const fileId = (item.link || '').match(/[-\w]{25,}/);
     const thumbUrl = fileId ? `https://lh3.googleusercontent.com/d/${fileId[0]}=w1000` : localPlaceholder(item.title);
     const isSelected = selectedIdx.has(idx);
+    const isStaffProduct = !!categoryStaffFlags[item.category];
 
     return `
-      <div class="card ${isAdmin ? 'admin-mode' : ''}">
+      <div class="card ${isAdmin ? 'admin-mode' : ''} ${isStaffProduct ? 'staff-product' : ''}">
         ${isAdmin ? `
         <div class="admin-actions">
           <button class="edit-btn" onclick="openEditMode(${idx})"><i class="fas fa-pen"></i></button>
           <button class="del-btn" onclick="confirmDeleteProduct(${idx})"><i class="fas fa-trash"></i></button>
         </div>` : ''}
         <div class="card-img-wrap">
+          ${isStaffProduct ? '<div class="staff-card-tag">🔒 STAFF</div>' : buildHighlightBadgesHtml(item)}
           <img class="card-img" src="${escapeAttr(thumbUrl)}" loading="lazy"
                onclick="previewImage('${escapeAttr(thumbUrl)}')"
                onerror="this.src='${localPlaceholder('ไม่พบรูป')}'">
@@ -432,7 +559,12 @@ function filterProductsDebounced() {
   }, 300);
 }
 
-function filterCategory(c) { currentFilter = c; renderTabs(); renderCatalogs(); }
+function filterCategory(c) {
+  // กันเผื่อ — ถ้าเป็นหมวด Staff only แต่ยังไม่ปลดล็อก (และไม่ใช่แอดมิน) ห้ามสลับไปแท็บนั้น
+  // (ปกติแท็บนี้จะไม่ถูกวาดให้กดได้อยู่แล้วตอนล็อกอยู่ แต่กันไว้เผื่อกรณีเรียกฟังก์ชันตรงๆ)
+  if (c !== 'all' && categoryStaffFlags[c] && !staffUnlocked && !isAdmin) return;
+  currentFilter = c; renderTabs(); renderCatalogs();
+}
 
 // --- Image preview ---
 function previewImage(src) {
@@ -515,6 +647,8 @@ async function handleProductAction() {
     category: document.getElementById('inputCat').value,
     fileType: currentFileType,
     oldTitle: document.getElementById('editOldTitle').value,
+    isNew: document.getElementById('inputIsNew').checked,
+    isHot: document.getElementById('inputIsHot').checked,
   };
   if (!p.title || !p.link) return Swal.fire({ title: 'ระบุข้อมูลไม่ครบ', icon: 'warning' });
   await sendToCloud(p);
@@ -538,7 +672,7 @@ function renderAdminCatList() {
   list.innerHTML = categories.map(cat => `
     <div class="cat-admin-row" data-cat="${escapeAttr(cat)}">
       <span class="drag-handle" title="ลากเพื่อจัดลำดับ"><i class="fas fa-grip-lines"></i></span>
-      <div class="cat-admin-name"><i class="fas fa-folder"></i> ${escapeHtml(cat)}</div>
+      <div class="cat-admin-name"><i class="fas fa-folder"></i> ${escapeHtml(cat)} ${categoryStaffFlags[cat] ? '<span class="staff-mini-tag">🔒 Staff</span>' : ''}</div>
       <div class="slide-admin-actions">
         <button class="edit" onclick="handleEditCat('${jsAttrString(cat)}')" title="แก้ไขชื่อหมวดนี้"><i class="fas fa-pen"></i></button>
         <button class="danger" onclick="handleDelCat('${jsAttrString(cat)}')" title="ลบหมวดนี้"><i class="fas fa-trash"></i></button>
@@ -667,21 +801,39 @@ function refreshCatAdminView() {
 async function handleAddCat() {
   const name = document.getElementById('newCatInput').value.trim();
   if (!name) return;
+  const staffOnly = document.getElementById('newCatStaffOnly').checked;
   const ok = await sendToCloud(
-    { action: 'addCat', catName: name },
+    { action: 'addCat', catName: name, staffOnly },
     { closeModalOnSuccess: false, onSuccess: refreshCatAdminView }
   );
-  if (ok) document.getElementById('newCatInput').value = '';
+  if (ok) {
+    document.getElementById('newCatInput').value = '';
+    document.getElementById('newCatStaffOnly').checked = false;
+  }
 }
 
 async function handleEditCat(oldName) {
-  const { value: newName } = await Swal.fire({
-    title: 'แก้ไขชื่อหมวดหมู่', input: 'text', inputValue: oldName,
+  const currentStaffOnly = !!categoryStaffFlags[oldName];
+  const { value } = await Swal.fire({
+    title: 'แก้ไขหมวดหมู่',
+    html: `
+      <input id="editCatNameInput" class="swal2-input" value="${escapeAttr(oldName)}">
+      <label style="display:flex;align-items:center;gap:8px;justify-content:center;margin-top:6px;font-size:13px;">
+        <input type="checkbox" id="editCatStaffInput" ${currentStaffOnly ? 'checked' : ''} style="width:16px;height:16px;">
+        🔒 Staff only (ต้องใส่รหัสก่อนดู)
+      </label>`,
     showCancelButton: true, confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก',
+    preConfirm: () => {
+      const name = document.getElementById('editCatNameInput').value.trim();
+      const staffOnly = document.getElementById('editCatStaffInput').checked;
+      if (!name) { Swal.showValidationMessage('กรุณาระบุชื่อหมวดหมู่'); return false; }
+      return { name, staffOnly };
+    },
   });
-  if (!newName || !newName.trim() || newName.trim() === oldName) return;
+  if (!value) return;
+  if (value.name === oldName && value.staffOnly === currentStaffOnly) return;
   await sendToCloud(
-    { action: 'editCat', oldCatName: oldName, catName: newName.trim() },
+    { action: 'editCat', oldCatName: oldName, catName: value.name, staffOnly: value.staffOnly },
     { closeModalOnSuccess: false, onSuccess: refreshCatAdminView }
   );
 }
@@ -830,6 +982,8 @@ function openEditMode(idx) {
   document.getElementById('inputTitle').value = item.title;
   document.getElementById('inputLink').value = item.link;
   document.getElementById('inputCat').value = item.category;
+  document.getElementById('inputIsNew').checked = isFlagTrue(item.isNew);
+  document.getElementById('inputIsHot').checked = isFlagTrue(item.isHot);
   currentFileType = item.fileType || 'pdf';
   setActiveTypePill(currentFileType);
   document.getElementById('autoDetectChip').classList.add('hidden');
@@ -846,6 +1000,8 @@ function resetToAddMode() {
   document.getElementById('inputTitle').value = '';
   document.getElementById('inputLink').value = '';
   document.getElementById('editOldTitle').value = '';
+  document.getElementById('inputIsNew').checked = false;
+  document.getElementById('inputIsHot').checked = false;
   document.getElementById('resetBtn').classList.add('hidden');
   setActiveTypePill('pdf');
   document.getElementById('autoDetectChip').classList.add('hidden');
